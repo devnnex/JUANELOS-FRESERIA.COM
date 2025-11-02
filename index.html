@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title> 🍨 Juanelos | Freseria 🍓 </title>
+  <link rel="stylesheet" href="style.css">
+  <!-- FONTAWESOME CDN -->
+ <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+</head>
+<body>
+  <div id="app" class="app-container">
+    <header class="topbar" role="banner">
+      <button id="menu-btn" class="icon-btn" aria-label="Abrir menú">☰</button>
+     <div class="brand">
+        <img src="images/logo.png" alt="The Boss" class="logo">
+    </div>
+      <button id="open-cart" class="cart-btn" aria-label="Abrir carrito">
+        <span class="cart-ico">🛒</span>
+        <span id="cart-count" class="cart-count">0</span>
+      </button>
+    </header>
+
+    <main class="content" role="main">
+      <!-- Categories (rendered/controlled by JS) -->
+      <nav class="categories" role="tablist" aria-label="Categorías">
+        <!-- Buttons injected by JS -->
+      </nav>
+
+      <!-- Search / filter -->
+      <div class="search-row">
+        <input id="search" type="search" placeholder="Buscar producto..." aria-label="Buscar productos">
+      </div>
+
+      <!-- Catalog -->
+      <section id="catalog" class="catalog fade-in" aria-live="polite">
+        <!-- productos renderizados por JS -->
+      </section>
+    </main>
+
+    
+    <!-- Product modal (options + add) -->
+   <div id="product-modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-panel">
+    <div class="modal-details">
+      <button class="modal-close icon-btn" id="modal-close" aria-label="Cerrar modal">✕</button>
+      <div class="modal-scroll" id="modal-content"></div>
+    </div>
+  </div>
+</div>
+
+
+    <!-- Cart Drawer (inside app container) -->
+    <aside id="cart-drawer" class="cart-drawer hidden" aria-hidden="true" aria-label="Carrito">
+      <header class="cart-header">
+        <h3>Carrito</h3>
+        <button id="close-cart" class="icon-btn" aria-label="Cerrar carrito">✕</button>
+      </header>
+
+      <div id="cart-items" class="cart-items" role="region" aria-live="polite"></div>
+
+      <div class="cart-summary">
+        <div class="row"><span>Subtotal</span><strong id="cart-subtotal">$0</strong></div>
+        
+        <div class="row total"><span>Total</span><strong id="cart-total">$0</strong></div>
+        <button id="checkout-btn" class="btn-primary">Confirmar orden</button>
+        <button id="clear-cart" class="btn-clear">Vaciar carrito</button>
+      </div>
+    </aside>
+
+    <!-- Checkout modal -->
+    <div id="checkout-modal" class="modal hidden" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="modal-panel">
+    <button class="modal-close icon-btn" id="checkout-close" aria-label="Cerrar">✕</button>
+    <h3>Confirmar pedido</h3>
+
+ <form id="checkout-form">
+  <!-- 🔸 Paso 1: Datos básicos -->
+  <div class="checkout-step active" id="step1">
+    <label>Nombre
+      <input name="name" type="text" required placeholder="Tu nombre">
+    </label>
+
+    <label>Teléfono
+      <input name="phone" type="tel" required placeholder="Ej: 3001234567">
+    </label>
+
+    <div class="checkout-actions">
+      <button type="button" id="next-step1" class="btn-primary">Continuar</button>
+      <button type="button" id="back-to-cart" class="btn-secondary">Volver</button>
+    </div>
+  </div>
+
+  <!-- 🔸 Paso 2: Detalles de entrega/pago -->
+  <div class="checkout-step" id="step2">
+    <!-- Mini resumen del cliente -->
+    <div class="client-summary" id="client-summary"></div>
+
+    <div class="radio-row" role="radiogroup" aria-label="Método de entrega">
+      <label><input type="radio" name="method" value="recoger" checked> Recoger</label>
+      <label><input type="radio" name="method" value="domicilio"> Domicilio</label>
+    </div>
+
+    <label id="address-label" class="hidden">Dirección
+      <input name="address" type="text" placeholder="Dirección para entrega">
+    </label>
+
+    <label>Método de pago
+      <select name="payment" id="payment-method" required>
+        <option value="" disabled selected>Selecciona una opción</option>
+        <option value="transferencia">Transferencia</option>
+        <option value="efectivo">Efectivo</option>
+      </select>
+    </label>
+
+    <div id="transfer-info" class="hidden transfer-box">
+      <p><strong>Banco:</strong> Nequi</p>
+      <p><strong>Número de cuenta:</strong> <span id="account-number">3208759798</span>
+        <button type="button" id="copy-account" class="copy-btn">Copiar</button>
+      </p>
+      <p><strong>Titular:</strong> Elk Ran</p>
+    </div>
+
+    <label>Notas (opcional)
+      <textarea name="notes" rows="2" placeholder="Ej: Sin cebolla"></textarea>
+    </label>
+
+    <div id="envio-row" class="checkout-row hidden">
+      <span>Envío</span>
+      <strong id="cart-delivery">$0</strong>
+    </div>
+
+    <div class="checkout-total">
+      <span>Total</span>
+      <strong id="cart-total-checkout">$0</strong>
+    </div>
+
+    <div class="checkout-actions">
+      <button type="button" id="back-step2" class="btn-secondary">Atrás</button>
+      <button type="submit" class="btn-primary">Confirmar pedido</button>
+    </div>
+  </div>
+</form>
+
+
+  </div>
+</div>
+
+  </div>
+<!-- ====== MENÚ LATERAL URBANO ====== -->
+<div id="side-menu" class="side-menu hidden" role="dialog" aria-modal="true">
+  <div class="side-menu-panel">
+
+    <!-- Botón cerrar -->
+    <button id="close-menu" class="icon-btn close-menu" aria-label="Cerrar menú">
+      <i class="fa-solid fa-x"></i>
+    </button>
+
+    <!-- LOGO -->
+    <div class="menu-logo">
+      <img src="images/logo.png" alt="Logo del negocio">
+    </div>
+
+    <!-- ENLACES SOCIALES -->
+    <ul class="social-links">
+      <li>
+        <a href="http://wa.me/573144601540" target="_blank">
+          <i class="fa-brands fa-whatsapp"></i>
+          <span>WhatsApp</span>
+        </a>
+      </li>
+      <li>
+        <a href="https://www.instagram.com/juanelos.co/" target="_blank">
+          <i class="fa-brands fa-instagram"></i>
+          <span>Instagram</span>
+        </a>
+      </li>
+      <li>
+        <a href="#" target="_blank">
+          <i class="fa-brands fa-facebook"></i>
+          <span>Facebook</span>
+        </a>
+      </li>
+      <li>
+        <a href="#" target="_blank">
+          <i class="fa-brands fa-tiktok"></i>
+          <span>TikTok</span>
+        </a>
+      </li>
+    </ul>
+  </div>
+</div>
+
+<!-- ====== FOOTER FIJO PREMIUM ====== -->
+<footer class="app-footer">
+  <div class="footer-content">
+    <img src="images/logo.png" alt="The Boss Logo" class="footer-logo">
+
+    <ul class="footer-social">
+      <li><a href="https://wa.me/573115990064" target="_blank"><i class="bx bxl-whatsapp"></i></a></li>
+      <li><a href="https://www.instagram.com/arepas_dog?igsh=OTQzYTE4dWllcGhs" target="_blank"><i class="bx bxl-instagram"></i></a></li>
+      <li><a href="https://www.facebook.com/share/19QDw1MKVb/?mibextid=wwXIfr" target="_blank"><i class="bx bxl-facebook"></i></a></li>
+      <li><a href="https://www.tiktok.com/@arepasdog2003?_t=ZS-90lqQeKPkUU&_r=1" target="_blank"><i class="bx bxl-tiktok"></i></a></li>
+    </ul>
+
+    <p>© 2025 🍨 Juanelos | Freseria 🍓. Todos los derechos reservados.</p>
+  </div>
+</footer>
+
+
+ 
+  <script src="app.js"></script>
+</body>
+</html>
