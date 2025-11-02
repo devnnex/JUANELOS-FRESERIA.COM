@@ -940,7 +940,7 @@ checkoutForm.addEventListener('submit', (e) => {
       ? c.extras.map(x => `   ➕ ${x.qty}x ${x.name} ($${numberWithCommas(x.price * x.qty)})`).join('\n')
       : '';
     const removedText = (c.removed && c.removed.length)
-      ? (' sin ' + c.removed.join(', '))
+      ? (' Toppings: ' + c.removed.join(', '))
       : '';
     const extrasSum = (c.extras || []).reduce((s, e) => s + (e.price * e.qty || 0), 0);
     const itemTotal = (c.price + extrasSum) * c.qty;
@@ -1115,3 +1115,4 @@ if (backStep2) {
     step1.classList.add("active");
   });
 }
+
