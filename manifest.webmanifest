@@ -1,0 +1,25 @@
+{
+  "name": "Juanelos",
+  "short_name": "Juanelos",
+  "description": "¡Los mejores postres! Pedidos online en Villavicencio.",
+  "lang": "es-CO",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4fbfe",
+  "theme_color": "#10a5d2",
+  "icons": [
+    {
+      "src": "./images/juanelos-app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./images/juanelos-app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
