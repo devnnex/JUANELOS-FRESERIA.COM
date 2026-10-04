@@ -1,4 +1,4 @@
-const CACHE_NAME = 'juanelos-pwa-v4';
+const CACHE_NAME = 'juanelos-pwa-v5';
 const APP_SHELL = [
   './',
   './index.html',
