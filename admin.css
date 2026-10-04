@@ -43,3 +43,11 @@ button:disabled{cursor:not-allowed}
 .order-card{aspect-ratio:auto;min-height:380px;padding-bottom:24px}
 .order-card-foot{min-height:52px;flex:0 0 auto;padding-bottom:2px}
 @media(max-width:760px){.order-card{min-height:360px}}
+
+/* Acciones administrativas de sección */
+.panel-actions,.toolbar-actions{display:flex;align-items:center;gap:9px}.panel-actions .danger-button,.toolbar-actions .danger-button{border:1px solid #f1caca}.panel-actions button:disabled,.toolbar-actions button:disabled{opacity:.48}
+@media(max-width:760px){.panel-actions,.toolbar-actions{width:100%}.panel-actions button,.toolbar-actions button{flex:1}.toolbar-actions button{height:48px}}
+
+/* Confirmación de eliminación */
+.confirm-backdrop{z-index:90}.confirm-modal{width:min(100%,440px);background:#fff}.confirm-modal-body{padding:30px;display:grid;justify-items:center;text-align:center}.confirm-modal-body>small{margin-top:16px;color:var(--red);font-size:.65rem;font-weight:900;letter-spacing:.14em}.confirm-modal-body h2{margin:7px 0 8px;color:var(--navy);font-size:1.35rem;letter-spacing:-.035em}.confirm-modal-body p{max-width:330px;margin:0;color:var(--muted);font-size:.84rem}.confirm-icon{width:58px;height:58px;display:grid;place-items:center;border-radius:19px;background:#fbeaea;color:var(--red);font-size:1.65rem;font-weight:950;box-shadow:0 10px 24px rgba(195,74,74,.12)}.confirm-modal .modal-actions{width:100%;margin-top:24px;display:grid;grid-template-columns:1fr 1fr}.confirm-modal .danger-button{background:var(--red);color:#fff;box-shadow:0 9px 22px rgba(195,74,74,.2)}
+@media(max-width:760px){.confirm-backdrop{padding:18px;align-items:center}.confirm-modal{border-radius:24px}.confirm-modal-body{padding:26px 22px}.confirm-modal .modal-actions{grid-column:auto}}

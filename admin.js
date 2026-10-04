@@ -46,6 +46,8 @@
   const slug = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 70);
   const can = permission => state.user?.role === 'jefe' || Boolean(state.user?.permissions?.[permission]);
   const formText = (form, name) => { const value = form.get(name); return typeof value === 'string' ? value : ''; };
+  let deleteConfirmationResolve = null;
+  let deleteConfirmationFocus = null;
 
   async function copyText(value) {
     if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value);
@@ -59,6 +61,27 @@
     element.hidden = false;
     clearTimeout(toast.timer);
     toast.timer = setTimeout(() => { element.hidden = true; }, 3300);
+  }
+
+  function confirmDeletion(title, copy, confirmLabel = 'Sí, eliminar') {
+    if (deleteConfirmationResolve) deleteConfirmationResolve(false);
+    deleteConfirmationFocus = document.activeElement;
+    $('#delete-confirm-title').textContent = title;
+    $('#delete-confirm-copy').textContent = copy;
+    $('#confirm-delete').textContent = confirmLabel;
+    $('#delete-confirm-modal').hidden = false;
+    requestAnimationFrame(() => $('#cancel-delete').focus());
+    return new Promise(resolve => { deleteConfirmationResolve = resolve; });
+  }
+
+  function closeDeleteConfirmation(confirmed) {
+    if (!deleteConfirmationResolve) return;
+    const resolve = deleteConfirmationResolve;
+    deleteConfirmationResolve = null;
+    $('#delete-confirm-modal').hidden = true;
+    if (deleteConfirmationFocus instanceof HTMLElement) deleteConfirmationFocus.focus();
+    deleteConfirmationFocus = null;
+    resolve(confirmed);
   }
 
   function armAlerts(event) {
@@ -387,21 +410,25 @@
   function renderProducts() {
     const root = $('#products-admin');
     const list = state.snapshot.products || [];
+    $('[data-delete-all="product"]').disabled = !list.length;
     root.innerHTML = list.length ? list.map(item => `<article class="admin-card"><div class="admin-card-image"><img src="${escapeHtml(item.image_url || './images/juanelos-original.png')}" alt=""></div><div class="admin-card-body"><div class="admin-card-head"><div><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(item.category)}</p></div>${switchMarkup('product', item)}</div><p>${escapeHtml(item.description)}</p><div class="admin-card-foot"><strong>${money(item.price)}</strong>${actionsMarkup('product', item.id)}</div></div></article>`).join('') : emptyMarkup('Aún no hay productos.');
   }
 
   function renderToppings() {
     const list = state.snapshot.toppings || [];
+    $('[data-delete-all="topping"]').disabled = !list.length;
     $('#toppings-admin').innerHTML = list.length ? `<table><thead><tr><th>Nombre</th><th>Tipo</th><th>Precio adicional</th><th>Disponible</th><th></th></tr></thead><tbody>${list.map(item => `<tr><td><strong>${escapeHtml(item.name)}</strong></td><td>${escapeHtml(item.kind)}</td><td>${money(item.price)}</td><td>${switchMarkup('topping', item)}</td><td><div class="table-actions">${actionsMarkup('topping', item.id)}</div></td></tr>`).join('')}</tbody></table>` : emptyMarkup('Aún no hay toppings.');
   }
 
   function renderPayments() {
     const list = state.snapshot.payments || [];
+    $('[data-delete-all="payment"]').disabled = !list.length;
     $('#payments-admin').innerHTML = list.length ? list.map(item => `<article class="admin-card"><div class="admin-card-body"><div class="admin-card-head"><div><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(item.instructions || 'Sin indicaciones')}</p></div>${switchMarkup('payment', item)}</div><p><strong>${escapeHtml(item.account_value || 'Dato pendiente')}</strong></p><div class="admin-card-foot"><span></span>${actionsMarkup('payment', item.id)}</div></div></article>`).join('') : emptyMarkup('Aún no hay métodos de pago.');
   }
 
   function renderNeighborhoods() {
     const list = state.snapshot.neighborhoods || [];
+    $('[data-delete-all="neighborhood"]').disabled = !list.length;
     $('#neighborhoods-admin').innerHTML = list.length ? `<table><thead><tr><th>Barrio</th><th>Domicilio</th><th>Disponible</th><th></th></tr></thead><tbody>${list.map(item => `<tr><td><strong>${escapeHtml(item.name)}</strong></td><td>${money(item.delivery_fee)}</td><td>${switchMarkup('neighborhood', item)}</td><td><div class="table-actions">${actionsMarkup('neighborhood', item.id)}</div></td></tr>`).join('')}</tbody></table>` : emptyMarkup('Agrega el primer barrio para habilitar domicilios.');
   }
 
@@ -411,7 +438,7 @@
     const labels = { products:'Productos', toppings:'Toppings', payments:'Pagos', neighborhoods:'Barrios', orders:'Órdenes', users:'Usuarios' };
     root.innerHTML = (state.snapshot.users || []).map(user => {
       const permissions = user.role === 'jefe' ? ['Control total'] : Object.keys(user.permissions || {}).filter(key => user.permissions[key]).map(key => labels[key]);
-      return `<article class="user-card"><div class="user-card-head"><div class="avatar">${escapeHtml(user.displayName.charAt(0).toUpperCase())}</div><div><h3>${escapeHtml(user.displayName)}</h3><p>@${escapeHtml(user.username)} · ${user.role === 'jefe' ? 'Jefe' : user.active ? 'Activo' : 'Inactivo'}</p></div></div><div class="permission-pills">${permissions.map(value => `<span>${escapeHtml(value)}</span>`).join('')}</div><div class="user-card-foot"><small>Último acceso: ${dateTime(user.lastLoginAt)}</small>${user.role === 'jefe' ? '' : `<label class="switch"><input type="checkbox" data-user-active="${user.id}" ${user.active ? 'checked' : ''}><span></span></label>`}</div>${user.role === 'jefe' ? '' : `<button class="secondary-button" data-reset-user="${user.id}" style="width:100%;margin-top:12px">Cambiar contraseña</button>`}</article>`;
+      return `<article class="user-card"><div class="user-card-head"><div class="avatar">${escapeHtml(user.displayName.charAt(0).toUpperCase())}</div><div><h3>${escapeHtml(user.displayName)}</h3><p>@${escapeHtml(user.username)} · ${user.role === 'jefe' ? 'Jefe' : user.active ? 'Activo' : 'Inactivo'}</p></div></div><div class="permission-pills">${permissions.map(value => `<span>${escapeHtml(value)}</span>`).join('')}</div><div class="user-card-foot"><small>Último acceso: ${dateTime(user.lastLoginAt)}</small>${user.role === 'jefe' ? '' : `<label class="switch"><input type="checkbox" data-user-active="${user.id}" ${user.active ? 'checked' : ''}><span></span></label>`}</div><button class="secondary-button" data-reset-user="${user.id}" style="width:100%;margin-top:12px">Cambiar contraseña</button></article>`;
     }).join('') || emptyMarkup('Aún no hay usuarios.');
   }
 
@@ -438,6 +465,7 @@
 
   function renderOrders() {
     const counts = status => state.orders.filter(order => order.status === status).length;
+    $('#delete-all-orders').disabled = !state.orders.length;
     const activeFilter = $('#order-status-filter').value;
     $('#order-metrics').innerHTML = `<button class="metric new ${activeFilter === 'nueva' ? 'active' : ''}" data-kpi-filter="nueva"><span>NUEVAS</span><strong>${counts('nueva')}</strong><small>Ver pendientes →</small></button><button class="metric progress ${activeFilter === 'atendiendo' ? 'active' : ''}" data-kpi-filter="atendiendo"><span>ATENDIENDO</span><strong>${counts('atendiendo')}</strong><small>Ver en proceso →</small></button><button class="metric done ${activeFilter === 'despachada' ? 'active' : ''}" data-kpi-filter="despachada"><span>DESPACHADAS</span><strong>${counts('despachada')}</strong><small>Ver completadas →</small></button><button class="metric ${activeFilter === 'borrador' ? 'active' : ''}" data-kpi-filter="borrador"><span>BORRADOR</span><strong>${counts('borrador')}</strong><small>Ver borradores →</small></button>`;
     const badge = $('#new-orders-badge');
@@ -471,10 +499,10 @@
   }
 
   const entityMap = {
-    product: { list:'products', title:'Producto' },
-    topping: { list:'toppings', title:'Topping o salsa' },
-    payment: { list:'payments', title:'Método de pago' },
-    neighborhood: { list:'neighborhoods', title:'Barrio' }
+    product: { list:'products', title:'Producto', plural:'productos' },
+    topping: { list:'toppings', title:'Topping o salsa', plural:'toppings y salsas' },
+    payment: { list:'payments', title:'Método de pago', plural:'métodos de pago' },
+    neighborhood: { list:'neighborhoods', title:'Barrio', plural:'barrios' }
   };
 
   function openEditor(entity, id = '') {
@@ -551,13 +579,44 @@
   }
 
   async function deleteEntity(entity, id) {
-    const item = state.snapshot[entityMap[entity].list].find(entry => entry.id === id);
-    if (!confirm(`¿Eliminar “${item?.name || id}”? Esta acción no se puede deshacer.`)) return;
+    const definition = entityMap[entity];
+    const previous = state.snapshot[definition.list];
+    const item = previous.find(entry => entry.id === id);
+    const confirmed = await confirmDeletion(`¿Eliminar “${item?.name || id}”?`, `Se eliminará este ${definition.title.toLocaleLowerCase('es')} de forma permanente.`);
+    if (!confirmed) return;
+    state.snapshot[definition.list] = previous.filter(entry => entry.id !== id);
+    renderAll();
     try {
       await rpc('admin_mutate', { p_token: state.token, p_entity: entity, p_action: 'delete', p_data: { id } });
       await loadSnapshot();
       toast('Elemento eliminado');
-    } catch (error) { toast('No se pudo eliminar', errorMessage(error)); }
+    } catch (error) {
+      state.snapshot[definition.list] = previous;
+      renderAll();
+      toast('No se pudo eliminar', errorMessage(error));
+    }
+  }
+
+  async function deleteAllEntities(entity, button) {
+    const definition = entityMap[entity];
+    const count = state.snapshot[definition?.list]?.length || 0;
+    if (!definition || !count) return;
+    const confirmed = await confirmDeletion(`¿Eliminar los ${count} ${definition.plural}?`, 'Todos los elementos de esta sección se eliminarán de forma permanente.', 'Sí, eliminar todo');
+    if (!confirmed) return;
+    const previous = state.snapshot[definition.list];
+    state.snapshot[definition.list] = [];
+    renderAll();
+    button.disabled = true;
+    try {
+      await rpc('admin_mutate', { p_token: state.token, p_entity: entity, p_action: 'delete_all', p_data: {} });
+      await loadSnapshot();
+      toast('Sección vaciada', `Se eliminaron ${count} ${definition.plural}.`);
+    } catch (error) {
+      state.snapshot[definition.list] = previous;
+      renderAll();
+      toast('No se pudo eliminar todo', errorMessage(error));
+      button.disabled = false;
+    }
   }
 
   async function toggleEntity(entity, id, available) {
@@ -603,11 +662,39 @@
     catch (error) { await loadSnapshot(); toast('No se pudo actualizar', errorMessage(error)); }
   }
 
-  async function resetUserPassword(userId) {
-    const password = prompt('Escribe la nueva contraseña (mínimo 8 caracteres):');
-    if (!password) return;
-    try { await rpc('admin_reset_user_password', { p_token: state.token, p_user_id: userId, p_password: password }); toast('Contraseña actualizada', 'Las sesiones anteriores fueron cerradas.'); }
-    catch (error) { toast('No se pudo cambiar', errorMessage(error)); }
+  function resetUserPassword(userId) {
+    const user = (state.snapshot.users || []).find(entry => entry.id === userId);
+    if (!user) return;
+    state.editor = { entity: 'user-password', user };
+    $('#editor-kicker').textContent = 'SEGURIDAD';
+    $('#editor-title').textContent = `Cambiar clave de ${user.displayName}`;
+    $('#editor-form').innerHTML = `<div class="form-grid"><label class="field full">Nueva contraseña<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="100"></label><label class="field full">Confirmar contraseña<input name="passwordConfirm" type="password" autocomplete="new-password" required minlength="8" maxlength="100"></label><div class="modal-actions"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button compact">Guardar contraseña</button></div></div>`;
+    $('#editor-modal').hidden = false;
+  }
+
+  async function submitUserPassword(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const password = formText(form, 'password');
+    if (password !== formText(form, 'passwordConfirm')) { toast('Las contraseñas no coinciden'); return; }
+    const button = $('button[type="submit"]', event.currentTarget);
+    button.disabled = true;
+    try {
+      const user = state.editor.user;
+      await rpc('admin_reset_user_password', { p_token: state.token, p_user_id: user.id, p_password: password });
+      $('#editor-modal').hidden = true;
+      if (user.id === state.user.id) {
+        localStorage.removeItem('juanelos-admin-token');
+        state.token = '';
+        toast('Contraseña actualizada', 'Ingresa nuevamente con tu nueva contraseña.');
+        setTimeout(() => location.reload(), 1400);
+      } else {
+        toast('Contraseña actualizada', 'Las sesiones anteriores fueron cerradas.');
+      }
+    } catch (error) {
+      toast('No se pudo cambiar', errorMessage(error));
+      button.disabled = false;
+    }
   }
 
   function historyLabel(entry) {
@@ -660,9 +747,49 @@
   }
 
   async function deleteOrder(order) {
-    if (!confirm(`¿Eliminar definitivamente la orden ${order.id}?`)) return;
-    try { await orderApi('deleteOrder', { orderId: order.id }); $('#order-modal').hidden = true; await loadOrders(true); toast('Orden eliminada'); }
-    catch (error) { toast('No se pudo eliminar', errorMessage(error)); }
+    const confirmed = await confirmDeletion(`¿Eliminar la orden ${order.id}?`, `La orden de ${order.customerName} se eliminará de forma permanente.`);
+    if (!confirmed) return;
+    const previous = state.orders;
+    $('#order-modal').hidden = true;
+    state.orders = previous.filter(entry => entry.id !== order.id);
+    state.knownOrderIds.delete(order.id);
+    renderOrders();
+    try {
+      await orderApi('deleteOrder', { orderId: order.id });
+      await loadOrders(true);
+      toast('Orden eliminada');
+    } catch (error) {
+      state.orders = previous;
+      state.knownOrderIds.add(order.id);
+      renderOrders();
+      toast('No se pudo eliminar', errorMessage(error));
+    }
+  }
+
+  async function deleteAllOrders() {
+    const count = state.orders.length;
+    if (!count) return;
+    const confirmed = await confirmDeletion(`¿Eliminar las ${count} órdenes?`, 'Todas las órdenes se eliminarán de forma permanente.', 'Sí, eliminar todas');
+    if (!confirmed) return;
+    const button = $('#delete-all-orders');
+    const previous = state.orders;
+    const previousIds = state.knownOrderIds;
+    state.orders = [];
+    state.knownOrderIds = new Set();
+    renderOrders();
+    button.disabled = true;
+    try {
+      await orderApi('deleteAllOrders');
+      state.orderPage = 1;
+      await loadOrders(true);
+      toast('Órdenes eliminadas', `Se eliminaron ${count} órdenes.`);
+    } catch (error) {
+      state.orders = previous;
+      state.knownOrderIds = previousIds;
+      renderOrders();
+      toast('No se pudieron eliminar', errorMessage(error));
+      button.disabled = false;
+    }
   }
 
   document.addEventListener('click', event => {
@@ -681,6 +808,7 @@
     const newButton = event.target.closest('[data-new]'); if (newButton) openEditor(newButton.dataset.new);
     const edit = event.target.closest('[data-edit]'); if (edit) openEditor(edit.dataset.edit, edit.dataset.id);
     const remove = event.target.closest('[data-delete]'); if (remove) void deleteEntity(remove.dataset.delete, remove.dataset.id);
+    const removeAll = event.target.closest('[data-delete-all]'); if (removeAll) void deleteAllEntities(removeAll.dataset.deleteAll, removeAll);
     const order = event.target.closest('[data-order-id]'); if (order) openOrder(order.dataset.orderId);
     if (event.target.closest('[data-close-modal]')) $('#editor-modal').hidden = true;
     if (event.target.closest('[data-close-order]')) $('#order-modal').hidden = true;
@@ -689,21 +817,30 @@
     const toggle = event.target.closest('[data-toggle]'); if (toggle) void toggleEntity(toggle.dataset.toggle, toggle.dataset.id, toggle.checked);
     const userToggle = event.target.closest('[data-user-active]'); if (userToggle) void setUserActive(userToggle.dataset.userActive, userToggle.checked);
   });
-  document.addEventListener('click', event => { const reset = event.target.closest('[data-reset-user]'); if (reset) void resetUserPassword(reset.dataset.resetUser); });
+  document.addEventListener('click', event => { const reset = event.target.closest('[data-reset-user]'); if (reset) resetUserPassword(reset.dataset.resetUser); });
   $('#auth-form').addEventListener('submit', submitAuth);
   $('#auth-form').addEventListener('click', event => { if (event.target.matches('[data-show-password]')) { const input = $('[name="password"]'); input.type = input.type === 'password' ? 'text' : 'password'; event.target.textContent = input.type === 'password' ? 'Ver' : 'Ocultar'; } });
-  $('#editor-form').addEventListener('submit', event => { void (state.editor?.entity === 'user' ? submitNewUser(event) : submitEditor(event)); });
+  $('#editor-form').addEventListener('submit', event => {
+    if (state.editor?.entity === 'user') void submitNewUser(event);
+    else if (state.editor?.entity === 'user-password') void submitUserPassword(event);
+    else void submitEditor(event);
+  });
   $('#new-user').addEventListener('click', openNewUser);
   $('#logout').addEventListener('click', () => { void logout(); });
   $('#menu-button').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
   $('#alert-status').addEventListener('click', armAlerts);
   $('#refresh-orders').addEventListener('click', () => { void loadOrders(true); });
+  $('#delete-all-orders').addEventListener('click', () => { void deleteAllOrders(); });
   $('#order-search').addEventListener('input', event => { state.orderQuery = event.target.value; state.orderPage = 1; $('#clear-order-search').hidden = !state.orderQuery; renderOrders(); });
   $('#clear-order-search').addEventListener('click', () => { state.orderQuery = ''; state.orderPage = 1; $('#order-search').value = ''; $('#clear-order-search').hidden = true; renderOrders(); $('#order-search').focus(); });
   $('#order-status-filter').addEventListener('change', () => { state.orderPage = 1; renderOrders(); });
   $('#order-message-filter').addEventListener('change', () => { state.orderPage = 1; renderOrders(); });
   $('#editor-modal').addEventListener('click', event => { if (event.target.id === 'editor-modal') event.currentTarget.hidden = true; });
   $('#order-modal').addEventListener('click', event => { if (event.target.id === 'order-modal') event.currentTarget.hidden = true; });
+  $('#cancel-delete').addEventListener('click', () => closeDeleteConfirmation(false));
+  $('#confirm-delete').addEventListener('click', () => closeDeleteConfirmation(true));
+  $('#delete-confirm-modal').addEventListener('click', event => { if (event.target.id === 'delete-confirm-modal') closeDeleteConfirmation(false); });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#delete-confirm-modal').hidden) closeDeleteConfirmation(false); });
   ['mousemove','pointerdown','touchstart','keydown','click'].forEach(eventName => document.addEventListener(eventName, armAlerts, { passive: true, capture: true }));
   document.addEventListener('visibilitychange', () => scheduleOrderPolling(150));
   window.addEventListener('focus', () => { void loadOrders(false); scheduleOrderPolling(250); });

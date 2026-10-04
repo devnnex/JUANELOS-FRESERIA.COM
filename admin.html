@@ -49,29 +49,29 @@
         <div class="metric-grid" id="order-metrics"></div>
         <div class="toolbar">
           <div class="order-filter-bar"><label class="order-search"><span>Buscar órdenes</span><div><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg><input id="order-search" type="search" autocomplete="off" placeholder="Número, nombre, teléfono, barrio…" aria-label="Buscar órdenes"><button type="button" id="clear-order-search" aria-label="Limpiar búsqueda" hidden>×</button></div></label><div class="filter-group"><label class="select-shell"><span>Estado</span><select class="juanelos-select" id="order-status-filter" aria-label="Filtrar por estado"><option value="">Todos los estados</option><option value="nueva">Nuevas</option><option value="atendiendo">Atendiendo</option><option value="despachada">Despachadas</option><option value="borrador">Borrador</option></select></label><label class="select-shell"><span>Mensaje</span><select class="juanelos-select" id="order-message-filter" aria-label="Filtrar por mensaje"><option value="">Todos los mensajes</option><option value="sin_mensaje">Sin mensaje</option><option value="esperando_pago">Esperando pago</option><option value="en_preparacion">En preparación</option><option value="despachada">Despacho avisado</option></select></label></div></div>
-          <button class="secondary-button" id="refresh-orders">Actualizar</button>
+          <div class="toolbar-actions"><button class="secondary-button" id="refresh-orders">Actualizar</button><button class="danger-button" id="delete-all-orders">Eliminar todas</button></div>
         </div>
         <div class="order-list" id="order-list"></div>
         <nav class="order-pagination" id="order-pagination" aria-label="Paginación de órdenes" hidden></nav>
       </section>
 
       <section class="panel" data-panel="products">
-        <div class="panel-heading"><div><h2>Carta de productos</h2><p>Disponibilidad, precios, información e imágenes.</p></div><button class="primary-button compact" data-new="product">+ Nuevo producto</button></div>
+        <div class="panel-heading"><div><h2>Carta de productos</h2><p>Disponibilidad, precios, información e imágenes.</p></div><div class="panel-actions"><button class="danger-button" data-delete-all="product">Eliminar todo</button><button class="primary-button compact" data-new="product">+ Nuevo producto</button></div></div>
         <div class="admin-grid" id="products-admin"></div>
       </section>
 
       <section class="panel" data-panel="toppings">
-        <div class="panel-heading"><div><h2>Toppings y salsas</h2><p>Los cambios se reflejan en la personalización del cliente.</p></div><button class="primary-button compact" data-new="topping">+ Nuevo topping</button></div>
+        <div class="panel-heading"><div><h2>Toppings y salsas</h2><p>Los cambios se reflejan en la personalización del cliente.</p></div><div class="panel-actions"><button class="danger-button" data-delete-all="topping">Eliminar todo</button><button class="primary-button compact" data-new="topping">+ Nuevo topping</button></div></div>
         <div class="table-card"><div class="responsive-table" id="toppings-admin"></div></div>
       </section>
 
       <section class="panel" data-panel="payments">
-        <div class="panel-heading"><div><h2>Banco y métodos de pago</h2><p>El cliente verá el dato correspondiente y podrá copiarlo.</p></div><button class="primary-button compact" data-new="payment">+ Nuevo método</button></div>
+        <div class="panel-heading"><div><h2>Banco y métodos de pago</h2><p>El cliente verá el dato correspondiente y podrá copiarlo.</p></div><div class="panel-actions"><button class="danger-button" data-delete-all="payment">Eliminar todo</button><button class="primary-button compact" data-new="payment">+ Nuevo método</button></div></div>
         <div class="admin-grid small" id="payments-admin"></div>
       </section>
 
       <section class="panel" data-panel="neighborhoods">
-        <div class="panel-heading"><div><h2>Barrios y domicilios</h2><p>Configura el costo de entrega por barrio.</p></div><button class="primary-button compact" data-new="neighborhood">+ Nuevo barrio</button></div>
+        <div class="panel-heading"><div><h2>Barrios y domicilios</h2><p>Configura el costo de entrega por barrio.</p></div><div class="panel-actions"><button class="danger-button" data-delete-all="neighborhood">Eliminar todo</button><button class="primary-button compact" data-new="neighborhood">+ Nuevo barrio</button></div></div>
         <div class="table-card"><div class="responsive-table" id="neighborhoods-admin"></div></div>
       </section>
 
@@ -89,6 +89,12 @@
 
   <div class="modal-backdrop" id="order-modal" hidden>
     <section class="modal order-modal" role="dialog" aria-modal="true" aria-labelledby="order-modal-title"><header><div><small>COMANDA EN VIVO</small><h2 id="order-modal-title">Detalle de orden</h2><p id="order-modal-subtitle">Trazabilidad completa del pedido</p></div><button data-close-order aria-label="Cerrar">×</button></header><div class="modal-body" id="order-detail"></div></section>
+  </div>
+
+  <div class="modal-backdrop confirm-backdrop" id="delete-confirm-modal" hidden>
+    <section class="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-copy">
+      <div class="confirm-modal-body"><div class="confirm-icon" aria-hidden="true">!</div><small>CONFIRMAR ELIMINACIÓN</small><h2 id="delete-confirm-title">¿Deseas eliminar este elemento?</h2><p id="delete-confirm-copy">Esta acción no se puede deshacer.</p><div class="modal-actions"><button type="button" class="secondary-button" id="cancel-delete">Cancelar</button><button type="button" class="danger-button" id="confirm-delete">Sí, eliminar</button></div></div>
+    </section>
   </div>
 
   <div class="platform-notifications" id="platform-notifications" aria-live="assertive"></div>

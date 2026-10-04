@@ -351,6 +351,7 @@ declare
   v_user_name text;
   v_permission text;
   v_id text := coalesce(nullif(trim(p_data ->> 'id'), ''), encode(digest(random()::text || clock_timestamp()::text, 'sha256'), 'hex'));
+  v_deleted_count integer := 0;
 begin
   v_permission := case p_entity
     when 'product' then 'products' when 'topping' then 'toppings'
@@ -366,6 +367,14 @@ begin
     elsif p_entity = 'payment' then delete from public.payment_methods where id = v_id;
     elsif p_entity = 'neighborhood' then delete from public.neighborhoods where id = v_id;
     end if;
+  elsif p_action = 'delete_all' then
+    v_id := 'all';
+    if p_entity = 'product' then delete from public.products;
+    elsif p_entity = 'topping' then delete from public.toppings;
+    elsif p_entity = 'payment' then delete from public.payment_methods;
+    elsif p_entity = 'neighborhood' then delete from public.neighborhoods;
+    end if;
+    get diagnostics v_deleted_count = row_count;
   elsif p_action = 'save' then
     if p_entity = 'product' then
       insert into public.products (id,name,category,price,image_url,description,badge,featured,available,sort_order,modifiers)
@@ -394,8 +403,9 @@ begin
   end if;
 
   insert into public.audit_log (user_id,user_name,action,entity,entity_id,details)
-  values (v_user_id,v_user_name,p_action,p_entity,v_id,p_data - 'password');
-  return jsonb_build_object('ok',true,'id',v_id);
+  values (v_user_id,v_user_name,p_action,p_entity,v_id,
+    case when p_action = 'delete_all' then jsonb_build_object('deletedCount',v_deleted_count) else p_data - 'password' end);
+  return jsonb_build_object('ok',true,'id',v_id,'deletedCount',v_deleted_count);
 end;
 $$;
 

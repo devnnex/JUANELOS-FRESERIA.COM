@@ -89,6 +89,7 @@ function doPost(event) {
     if (action === 'getOrders') return jsonResponse_(getOrders_(payload.sinceRevision));
     if (action === 'updateOrder') return jsonResponse_(updateOrder_(payload, session.user, backend));
     if (action === 'deleteOrder') return jsonResponse_(deleteOrder_(payload.orderId, session.user, backend));
+    if (action === 'deleteAllOrders') return jsonResponse_(deleteAllOrders_(session.user, backend));
     if (action === 'uploadImage') return jsonResponse_(uploadImage_(payload, session.user));
 
     throw new Error('Acción no reconocida.');
@@ -288,6 +289,16 @@ function deleteOrder_(orderId, user, backend) {
   appendAudit_(user, 'eliminar_orden', cleanId, {});
   publishOrderEvent_(backend, cleanId, revision, 'deleted');
   return { ok: true, revision: revision };
+}
+
+function deleteAllOrders_(user, backend) {
+  const sheet = ensureDatabase_().getSheetByName(SHEETS.orders.name);
+  const count = Math.max(0, sheet.getLastRow() - 1);
+  if (count) sheet.deleteRows(2, count);
+  const revision = bumpRevision_();
+  appendAudit_(user, 'eliminar_todas_ordenes', '*', { deletedCount: count });
+  publishOrderEvent_(backend, '*', revision, 'deleted');
+  return { ok: true, revision: revision, deletedCount: count };
 }
 
 function uploadImage_(payload, user) {
