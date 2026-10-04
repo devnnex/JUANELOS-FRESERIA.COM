@@ -1,0 +1,16 @@
+{
+  "name": "Juanelos Admin",
+  "short_name": "Juanelos",
+  "description": "Panel operativo de Juanelos",
+  "lang": "es-CO",
+  "start_url": "./admin.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f3eb",
+  "theme_color": "#073b57",
+  "icons": [
+    { "src": "./images/juanelos-app-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./images/juanelos-app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

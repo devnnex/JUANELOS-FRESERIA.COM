@@ -83,12 +83,25 @@
       <div class="welcome-mark" aria-hidden="true">💙</div>
       <small>BIENVENIDO A JUANELOS</small>
       <h2 id="welcome-title">Arma tu orden</h2>
-      <p id="welcome-copy">Te llevaremos a WhatsApp automáticamente cuando confirmes el pedido. El costo del domicilio dependerá de la mensajería.</p>
+      <p id="welcome-copy">Confirma tu pedido aquí. Juanelos recibirá la orden al instante y se comunicará contigo por WhatsApp para validar el pago.</p>
       <button class="welcome-action" id="welcome-close" type="button">Comenzar pedido <span aria-hidden="true">→</span></button>
     </section>
   </div>
 
+  <div class="overlay availability-overlay" id="availability-overlay" hidden>
+    <section class="availability-dialog" role="alertdialog" aria-modal="true" aria-labelledby="availability-title" aria-describedby="availability-copy">
+      <button class="availability-dismiss" id="availability-dismiss" type="button" aria-label="Cerrar">×</button>
+      <div class="availability-mark" aria-hidden="true">!</div>
+      <small>ACTUALIZACIÓN DEL MENÚ</small>
+      <h2 id="availability-title">Algo de tu pedido se agotó</h2>
+      <p id="availability-copy">Juanelos acaba de actualizar la disponibilidad. Revisa estos productos antes de continuar.</p>
+      <div class="availability-items" id="availability-items"></div>
+      <button class="availability-action" id="availability-review" type="button">Revisar mi pedido <span aria-hidden="true">→</span></button>
+    </section>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden><strong id="toast-title"></strong><span id="toast-copy"></span></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
   <script src="./app.js" defer></script>
 </body>
 </html>
