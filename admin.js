@@ -21,6 +21,7 @@
     orderPageSize: 15,
     orderQuery: '',
     activeSection: 'orders',
+    brandLinks: [], brandLinksReady: false, brandLinksLoading: false,
     editor: null,
     realtime: null,
     orderRealtime: null,
@@ -199,7 +200,7 @@
   async function orderApi(action, data = {}) {
     if (!configured) throw new Error('Falta configurar el URL de Apps Script.');
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 9000);
+    const timeout = setTimeout(() => controller.abort(), action === 'getOrderReceipt' ? 25000 : 9000);
     try {
       const response = await fetch(CONFIG.appsScriptUrl, {
         method: 'POST',
@@ -300,7 +301,7 @@
   }
 
   function firstAllowedSection() {
-    return ['orders','products','toppings','payments','neighborhoods','users'].find(section => section === 'orders' ? can('orders') : can(section)) || 'products';
+    return ['orders','products','toppings','payments','neighborhoods','links','users'].find(section => section === 'orders' ? can('orders') : can(section)) || 'products';
   }
 
   async function logout() {
@@ -389,10 +390,11 @@
     state.activeSection = section;
     $$('[data-section]').forEach(button => button.classList.toggle('active', button.dataset.section === section));
     $$('[data-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.panel === section));
-    const titles = { orders:'Órdenes', products:'Productos', toppings:'Toppings', payments:'Banco y pagos', neighborhoods:'Barrios', users:'Usuarios' };
+    const titles = { orders:'Órdenes', products:'Productos', toppings:'Toppings', payments:'Banco y pagos', neighborhoods:'Barrios', links:'Enlaces de Juanelos', users:'Usuarios' };
     $('#section-title').textContent = titles[section];
     $('#section-kicker').textContent = section === 'orders' ? 'OPERACIÓN EN VIVO' : 'CONFIGURACIÓN';
     $('#sidebar').classList.remove('open');
+    if (section === 'links' && can('links')) void loadBrandLinks();
   }
 
   function renderAll() {
@@ -435,7 +437,7 @@
   function renderUsers() {
     const root = $('#users-admin');
     if (!can('users')) return;
-    const labels = { products:'Productos', toppings:'Toppings', payments:'Pagos', neighborhoods:'Barrios', orders:'Órdenes', users:'Usuarios' };
+    const labels = { products:'Productos', toppings:'Toppings', payments:'Pagos', neighborhoods:'Barrios', links:'Enlaces de Juanelos', orders:'Órdenes', users:'Usuarios' };
     root.innerHTML = (state.snapshot.users || []).map(user => {
       const permissions = user.role === 'jefe' ? ['Control total'] : Object.keys(user.permissions || {}).filter(key => user.permissions[key]).map(key => labels[key]);
       return `<article class="user-card"><div class="user-card-head"><div class="avatar">${escapeHtml(user.displayName.charAt(0).toUpperCase())}</div><div><h3>${escapeHtml(user.displayName)}</h3><p>@${escapeHtml(user.username)} · ${user.role === 'jefe' ? 'Jefe' : user.active ? 'Activo' : 'Inactivo'}</p></div></div><div class="permission-pills">${permissions.map(value => `<span>${escapeHtml(value)}</span>`).join('')}</div><div class="user-card-foot"><small>Último acceso: ${dateTime(user.lastLoginAt)}</small>${user.role === 'jefe' ? '' : `<label class="switch"><input type="checkbox" data-user-active="${user.id}" ${user.active ? 'checked' : ''}><span></span></label>`}</div><button class="secondary-button" data-reset-user="${user.id}" style="width:100%;margin-top:12px">Cambiar contraseña</button></article>`;
@@ -498,6 +500,48 @@
     pagination.innerHTML = filtered.length > state.orderPageSize ? `<span>Mostrando ${start + 1}–${Math.min(start + state.orderPageSize, filtered.length)} de ${filtered.length}</span><div>${paginationMarkup(totalPages)}</div>` : '';
   }
 
+  async function loadBrandLinks() {
+    if (!can('links') || state.brandLinksLoading) return;
+    state.brandLinksLoading = true; $('#refresh-brand-links').disabled = true; $('#brand-links-status').textContent = 'Actualizando enlaces…';
+    try {
+      const result = await orderApi('getBrandLinks');
+      if (!Array.isArray(result.links)) throw new Error('La lista de enlaces no está disponible.');
+      state.brandLinks = result.links; state.brandLinksReady = true; renderBrandLinks();
+      $('#brand-links-status').textContent = 'Los enlaces activos se muestran en enlaces.html.';
+    } catch (error) {
+      state.brandLinksReady = false;
+      $('#brand-links-status').textContent = /no reconocida|no está disponible/i.test(errorMessage(error)) ? 'Para activar los enlaces, actualiza el deployment de Apps Script con el Code.gs de este proyecto.' : errorMessage(error);
+    } finally { state.brandLinksLoading = false; $('#refresh-brand-links').disabled = false; $('#new-brand-link').disabled = !state.brandLinksReady; }
+  }
+  function renderBrandLinks() {
+    $('#brand-links-admin').innerHTML = state.brandLinks.map(link => `<article class="admin-card brand-link-card"><div class="brand-link-card-heading"><span>${escapeHtml(link.kind)}</span><b>${link.active ? 'Activo' : 'Oculto'}</b></div><h3>${escapeHtml(link.title)}</h3><p>${escapeHtml(link.subtitle)}</p><a href="${escapeHtml(window.JuanelosServices.safeLink(link.url))}" target="_blank" rel="noopener noreferrer">${escapeHtml(link.url)}</a><div class="brand-link-card-actions"><small>Orden ${Number(link.sortOrder) || 0}</small><button type="button" class="secondary-button" data-brand-edit="${escapeHtml(link.id)}">Editar</button><button type="button" class="danger-button" data-brand-delete="${escapeHtml(link.id)}">Eliminar</button></div></article>`).join('') || emptyMarkup('Agrega tus redes y enlaces. La página ya incluye el menú, WhatsApp y cómo llegar a Juanelos.');
+  }
+  function openBrandLinkEditor(id = '') {
+    if (!can('links') || !state.brandLinksReady) return;
+    const item = state.brandLinks.find(link => link.id === id); if (id && !item) return;
+    state.editor = { entity:'brand-link', item };
+    $('#editor-kicker').textContent = 'PÁGINA DE JUANELOS'; $('#editor-title').textContent = item ? 'Editar enlace' : 'Nuevo enlace';
+    $('#editor-form').innerHTML = `<div class="form-grid"><input type="hidden" name="id" value="${escapeHtml(item?.id || '')}"><label class="field full">Título<input name="title" required minlength="2" maxlength="60" value="${escapeHtml(item?.title || '')}" placeholder="Ej.: Síguenos en Instagram"></label><label class="field full">Descripción breve<input name="subtitle" maxlength="120" value="${escapeHtml(item?.subtitle || '')}" placeholder="Postres, novedades y momentos deliciosos"></label><label class="field full">Enlace oficial<input name="url" type="url" required maxlength="1000" pattern="https://.*" value="${escapeHtml(item?.url || '')}" placeholder="https://www.instagram.com/tu-cuenta/"></label><label class="field">Icono<select name="kind">${Object.entries({instagram:'Instagram',tiktok:'TikTok',facebook:'Facebook',whatsapp:'WhatsApp',web:'Sitio web',maps:'Ubicación'}).map(([value,label]) => `<option value="${value}" ${item?.kind === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label class="field">Orden<input type="number" name="sortOrder" min="0" max="999" step="1" value="${Number(item?.sortOrder) || 0}"></label><label class="check-row field full">Mostrar en la página<span class="switch"><input name="active" type="checkbox" ${item?.active !== false ? 'checked' : ''}><span></span></span></label></div><div class="modal-actions"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button compact">Guardar enlace</button></div>`;
+    $('#editor-modal').hidden = false; requestAnimationFrame(() => $('[name="title"]', $('#editor-form')).focus());
+  }
+  async function submitBrandLink(event) {
+    event.preventDefault(); if (!can('links') || !state.brandLinksReady) return;
+    const form = new FormData(event.target), button = $('[type="submit"]', event.target); if (button.disabled) return;
+    const link = {id:formText(form,'id'),title:formText(form,'title').trim(),subtitle:formText(form,'subtitle').trim(),url:formText(form,'url').trim(),kind:formText(form,'kind'),sortOrder:Number(form.get('sortOrder')),active:form.get('active')==='on'};
+    if (!window.JuanelosServices.safeLink(link.url) || link.title.length < 2) return toast('Revisa el enlace', 'Ingresa un título y una dirección HTTPS válida.');
+    button.disabled = true;
+    try { const result = await orderApi('mutateBrandLink', {operation:'save',link}); state.brandLinks = result.links; renderBrandLinks(); $('#editor-modal').hidden = true; $('#new-brand-link').focus(); toast('Enlace guardado', 'Tu página de Juanelos quedó actualizada.'); }
+    catch (error) { toast('No se pudo guardar', errorMessage(error)); } finally { button.disabled = false; }
+  }
+  async function deleteBrandLink(id, button) {
+    if (!can('links') || !state.brandLinksReady || button.disabled) return;
+    const link = state.brandLinks.find(item => item.id === id); if (!link) return;
+    if (!await confirmDeletion(`¿Eliminar “${link.title}”?`, 'El enlace dejará de aparecer en tu página de Juanelos.')) return;
+    button.disabled = true;
+    try { const result = await orderApi('mutateBrandLink', {operation:'delete',link}); state.brandLinks = result.links; renderBrandLinks(); toast('Enlace eliminado'); }
+    catch (error) { toast('No se pudo eliminar', errorMessage(error)); } finally { button.disabled = false; }
+  }
+
   const entityMap = {
     product: { list:'products', title:'Producto', plural:'productos' },
     topping: { list:'toppings', title:'Topping o salsa', plural:'toppings y salsas' },
@@ -512,6 +556,7 @@
     $('#editor-kicker').textContent = item ? 'EDITAR' : 'NUEVO';
     $('#editor-title').textContent = definition.title;
     $('#editor-form').innerHTML = editorFields(entity, item || {}) + `<div class="modal-actions"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button compact">Guardar cambios</button></div>`;
+    if (entity === 'product') window.JuanelosAdminExtras.styleImagePicker($('#editor-form'), item?.image_url || '');
     $('#editor-modal').hidden = false;
   }
 
@@ -634,7 +679,7 @@
     state.editor = { entity: 'user' };
     $('#editor-kicker').textContent = 'NUEVO';
     $('#editor-title').textContent = 'Usuario del equipo';
-    const permissionLabels = { products:'Productos', toppings:'Toppings', payments:'Banco y pagos', neighborhoods:'Barrios', orders:'Órdenes' };
+    const permissionLabels = { products:'Productos', toppings:'Toppings', payments:'Banco y pagos', neighborhoods:'Barrios', links:'Enlaces de Juanelos', orders:'Órdenes' };
     $('#editor-form').innerHTML = `<div class="form-grid"><label class="field">Nombre<input name="displayName" required maxlength="70"></label><label class="field">Usuario<input name="username" required minlength="3" maxlength="40"></label><label class="field full">Contraseña temporal<input name="password" type="text" required minlength="8" maxlength="100"></label><div class="permissions-box"><strong>Permisos</strong><div class="permission-checks">${Object.entries(permissionLabels).map(([key,label]) => `<label><input type="checkbox" name="permission" value="${key}" ${key === 'orders' ? 'checked' : ''}> ${label}</label>`).join('')}</div></div><div class="modal-actions"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button compact">Crear usuario</button></div></div>`;
     $('#editor-modal').hidden = false;
   }
@@ -718,6 +763,7 @@
     $('#send-whatsapp').addEventListener('click', () => { void sendWhatsApp(order); });
     $('#delete-order').addEventListener('click', () => { void deleteOrder(order); });
     $('#order-modal').hidden = false;
+    window.JuanelosAdminExtras.renderOrder(order, orderApi, toast);
   }
 
   async function updateOrder(orderId, changes) {
@@ -821,11 +867,18 @@
   $('#auth-form').addEventListener('submit', submitAuth);
   $('#auth-form').addEventListener('click', event => { if (event.target.matches('[data-show-password]')) { const input = $('[name="password"]'); input.type = input.type === 'password' ? 'text' : 'password'; event.target.textContent = input.type === 'password' ? 'Ver' : 'Ocultar'; } });
   $('#editor-form').addEventListener('submit', event => {
-    if (state.editor?.entity === 'user') void submitNewUser(event);
+    if (state.editor?.entity === 'brand-link') void submitBrandLink(event);
+    else if (state.editor?.entity === 'user') void submitNewUser(event);
     else if (state.editor?.entity === 'user-password') void submitUserPassword(event);
     else void submitEditor(event);
   });
   $('#new-user').addEventListener('click', openNewUser);
+  $('#new-brand-link').addEventListener('click', () => openBrandLinkEditor());
+  $('#refresh-brand-links').addEventListener('click', () => { void loadBrandLinks(); });
+  $('#brand-links-admin').addEventListener('click', event => {
+    const edit = event.target.closest('[data-brand-edit]'); if (edit) openBrandLinkEditor(edit.dataset.brandEdit);
+    const remove = event.target.closest('[data-brand-delete]'); if (remove) void deleteBrandLink(remove.dataset.brandDelete, remove);
+  });
   $('#logout').addEventListener('click', () => { void logout(); });
   $('#menu-button').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
   $('#alert-status').addEventListener('click', armAlerts);

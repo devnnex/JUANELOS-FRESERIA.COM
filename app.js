@@ -88,6 +88,7 @@ window.JUANELOS_CONFIG = Object.freeze({
     cart:[], cartStep:'cart', fulfillment:'pickup', payment:'transferencia', selectedNeighborhood:null,
     customer:{name:'',phone:'',address:'',neighborhood:'',notes:''}, orderTotal:0, realtime:null, orderSignal:null,
     sendingTimer:null,
+    receipt:null, receiptBusy:false, receiptRevision:0, lastWhatsappUrl:'',
     availabilitySignature:''
   };
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -95,6 +96,8 @@ window.JUANELOS_CONFIG = Object.freeze({
   const money = value => new Intl.NumberFormat('es-CO', { style:'currency', currency:'COP', maximumFractionDigits:0 }).format(Number(value) || 0);
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
   async function copyText(value) { if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value); window.prompt('Copia este contenido:', value); }
+  const delivery = window.JuanelosDelivery;
+  delivery.configure(() => { const wrapper = $('#checkout-location'); if (wrapper) wrapper.innerHTML = delivery.markup(); }, toast);
 
   function orderWhatsAppUrl(order, orderId, confirmedTotal) {
     const productLines = order.items.flatMap((item, index) => {
@@ -125,6 +128,8 @@ window.JUANELOS_CONFIG = Object.freeze({
       ...(order.fulfillment === 'delivery' ? [`🛵 *Domicilio:* ${money(order.deliveryFee)}`] : []),
       `💵 *TOTAL:* ${money(totalValue)}`,
       `💳 *Método de pago:* ${order.paymentMethod}`,
+      ...(order.receipt ? ['📎 Comprobante adjunto a la orden.'] : []),
+      ...(order.liveLocation ? ['📍 *Ubicación del cliente:* ' + window.JuanelosServices.locationUrl(orderId, order.liveLocation.viewerToken)] : []),
       ...(order.notes ? ['', `📝 *Indicaciones:* ${order.notes}`] : []),
       '',
       '✅ Quedo atento(a) a la confirmación. ¡Gracias!'
@@ -137,8 +142,8 @@ window.JUANELOS_CONFIG = Object.freeze({
   if (table) $('#order-location').textContent = `Mesa ${table}`;
 
   function saveCart() { localStorage.setItem('juanelos-cart-v2', JSON.stringify(state.cart)); updateCounts(); showAvailabilityAlert(); }
-  function updateCounts() { const count = state.cart.reduce((sum,item) => sum + item.quantity, 0); $$('.cart-count').forEach(node => { node.textContent = count; }); }
-  function toast(title, copy = '') { const element = $('#toast'); $('#toast-title').textContent = title; $('#toast-copy').textContent = copy; element.hidden = false; clearTimeout(toast.timer); toast.timer = setTimeout(() => { element.hidden = true; }, 2900); }
+  function updateCounts() { const count = state.cart.reduce((sum,item) => sum + item.quantity, 0); $$('.cart-count').forEach(node => { node.textContent = count; }); $('#nav-cart').classList.toggle('has-items', count > 0); }
+  function toast(title, copy = '', cartFeedback = false) { const element = $('#toast'); element.classList.toggle('cart-feedback', cartFeedback); $('#toast-title').textContent = title; $('#toast-copy').textContent = copy; element.hidden = false; clearTimeout(toast.timer); toast.timer = setTimeout(() => { element.hidden = true; }, 2900); }
   function subtotal() { return state.cart.reduce((sum,item) => sum + item.unitPrice * item.quantity, 0); }
   function deliveryFee() { return state.fulfillment === 'delivery' ? Number(state.selectedNeighborhood?.delivery_fee || 0) : 0; }
   function total() { return subtotal() + deliveryFee(); }
@@ -299,7 +304,7 @@ window.JUANELOS_CONFIG = Object.freeze({
     (state.active.modifiers || []).forEach(modifier => { selectionLabels[modifier.id] = (state.selections[modifier.id] || []).map(id => modifier.options.find(item => item.id === id)?.name).filter(Boolean); });
     const item = { key:state.editingKey || `${state.active.id}-${Date.now()}`, productId:state.active.id, productSnapshot:{...state.active}, quantity:state.quantity, selections:structuredClone(state.selections), selectionLabels, unitPrice:selectedUnitPrice() };
     state.cart = state.editingKey ? state.cart.map(entry => entry.key === state.editingKey ? item : entry) : [...state.cart,item];
-    saveCart(); hideOverlay('product'); toast(state.editingKey ? 'Producto actualizado' : 'Agregado a tu pedido', `${item.quantity} × ${state.active.name}`); state.active = null; state.editingKey = null;
+    saveCart(); hideOverlay('product'); toast(state.editingKey ? 'Producto actualizado' : 'Agregado a tu pedido', `${item.quantity} × ${state.active.name}`, true); state.active = null; state.editingKey = null;
   }
 
   function confettiMarkup(count = 58) {
@@ -329,6 +334,18 @@ window.JUANELOS_CONFIG = Object.freeze({
     }, 1250);
   }
 
+  function receiptMarkup() {
+    return `<div class="receipt-card-heading"><span aria-hidden="true">▤</span><div><strong>Comprobante de pago</strong><p>Opcional · Adjunta la imagen de tu transferencia.</p></div></div>${state.receipt ? `<div class="receipt-selected"><img src="${state.receipt.dataUrl}" alt="Vista previa del comprobante"><div><strong>${escapeHtml(state.receipt.name)}</strong><span>Se enviará junto con tu pedido.</span><button type="button" id="receipt-remove">Quitar imagen</button></div></div>` : ''}<label class="premium-upload"><input name="receiptFile" id="receipt-file" type="file" accept="image/png,image/jpeg,image/webp" ${state.receiptBusy ? 'disabled' : ''}><span class="upload-symbol" aria-hidden="true">↑</span><span><strong>${state.receiptBusy ? 'Preparando imagen…' : state.receipt ? 'Cambiar comprobante' : 'Seleccionar comprobante'}</strong><small>JPG, PNG o WebP · hasta 10 MB</small></span><b aria-hidden="true">+</b></label>`;
+  }
+  async function selectReceipt(file) {
+    if (!file) return;
+    const revision = ++state.receiptRevision; state.receiptBusy = true;
+    $('#checkout-receipt').innerHTML = receiptMarkup(); $('#confirm-order').disabled = true;
+    try { const receipt = await window.JuanelosServices.prepareReceipt(file); if (revision === state.receiptRevision) state.receipt = receipt; }
+    catch (error) { toast('Revisa el comprobante', error.message); }
+    finally { if (revision === state.receiptRevision) { state.receiptBusy = false; const wrapper = $('#checkout-receipt'); if (wrapper) wrapper.innerHTML = receiptMarkup(); const button = $('#confirm-order'); if (button) button.disabled = false; } }
+  }
+
   function renderCart() {
     const root = $('#cart-content'), action = $('#cart-action');
     $('#cart-overlay .cart-sheet').classList.toggle('checkout-view', state.cartStep === 'checkout');
@@ -345,6 +362,10 @@ window.JUANELOS_CONFIG = Object.freeze({
     }
     if (state.cartStep === 'success') {
       root.innerHTML = `<div class="confetti-layer" aria-hidden="true">${confettiMarkup()}</div><div class="success success-celebration"><button class="success-close" id="success-close" type="button" aria-label="Cerrar">×</button><div class="success-mark"><svg viewBox="0 0 52 52" aria-hidden="true"><path d="M14 27.5 22.5 36 39 18"></path></svg></div><small>ORDEN REALIZADA</small><h3>¡Pedido realizado<br>con éxito!</h3><p>Gracias, ${escapeHtml(state.customer.name.split(' ')[0] || '')}. Te llevaremos a WhatsApp para enviar los detalles de tu pedido.</p><div class="order-number"><small>NÚMERO DE PEDIDO</small><strong>${escapeHtml(state.lastOrderId)}</strong></div><button id="finish-order">Volver al menú</button></div>`;
+      if (delivery.confirmed && delivery.active) {
+        $('.success-celebration p', root).textContent = 'Tu ubicación se está compartiendo con Juanelos. Envíanos los detalles por WhatsApp sin cerrar esta página.';
+        const link = document.createElement('a'); link.href = state.lastWhatsappUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.className = 'order-whatsapp-link'; link.textContent = 'Enviar pedido por WhatsApp ↗'; $('#finish-order').before(link);
+      }
       action.innerHTML = ''; return;
     }
     if (state.cartStep === 'checkout') {
@@ -353,7 +374,11 @@ window.JUANELOS_CONFIG = Object.freeze({
       const neighborhoodOptions = neighborhoods.map(item => `<option value="${escapeHtml(item.name)}"></option>`).join('');
       const deliveryFields = state.fulfillment === 'delivery' ? `<div class="delivery-fields"><label>Dirección<input name="address" value="${escapeHtml(state.customer.address)}" placeholder="Calle, carrera, número y detalles" maxlength="120" autocomplete="street-address" required><div class="neighborhood-suggestions" id="neighborhood-suggestions"></div></label><label>Barrio<input name="neighborhood" list="neighborhood-list" value="${escapeHtml(state.customer.neighborhood)}" placeholder="Escribe y selecciona tu barrio" maxlength="60" autocomplete="off" required><datalist id="neighborhood-list">${neighborhoodOptions}</datalist></label></div>` : '';
       root.innerHTML = `<form class="checkout" id="checkout-form"><fieldset class="checkout-choice"><legend>¿Cómo quieres recibir tu pedido?</legend><div class="choice-grid"><label><input type="radio" name="fulfillment" value="pickup" ${state.fulfillment === 'pickup' ? 'checked' : ''}><span><b>⌂</b><strong>Recoger</strong><small>En Juanelos</small></span></label><label><input type="radio" name="fulfillment" value="delivery" ${state.fulfillment === 'delivery' ? 'checked' : ''}><span><b>⌖</b><strong>Domicilio</strong><small>En tu dirección</small></span></label></div></fieldset>${deliveryFields}<label>Nombre completo<input name="name" value="${escapeHtml(state.customer.name)}" placeholder="¿A nombre de quién?" maxlength="60" autocomplete="name" required></label><label>Teléfono<input name="phone" type="tel" inputmode="tel" value="${escapeHtml(state.customer.phone)}" placeholder="300 000 0000" maxlength="20" autocomplete="tel" required></label><label>Indicaciones especiales <small><span id="note-count">${state.customer.notes.length}</span>/180</small><textarea name="notes" maxlength="180" placeholder="Ej: sin pitillo, alergias o alguna indicación...">${escapeHtml(state.customer.notes)}</textarea></label><fieldset class="checkout-choice payment-choice"><legend>Método de pago</legend><div class="payment-grid">${paymentMethods.map(method => `<label><input type="radio" name="payment" value="${escapeHtml(method.id)}" ${state.payment === method.id ? 'checked' : ''}><span>${escapeHtml(method.name)}</span></label>`).join('')}</div></fieldset>${paymentInfo}<div class="summary"><div><span>Subtotal</span><span>${money(subtotal())}</span></div>${state.fulfillment === 'delivery' ? `<div><span>Domicilio${state.selectedNeighborhood ? ` · ${escapeHtml(state.selectedNeighborhood.name)}` : ''}</span><span>${state.selectedNeighborhood ? money(deliveryFee()) : 'Selecciona tu barrio'}</span></div>` : ''}<div class="total"><strong>Total</strong><strong>${money(total())}</strong></div></div></form>`;
-      action.innerHTML = `<button id="confirm-order">Confirmar pedido · ${money(total())}</button>`; return;
+      if (state.fulfillment === 'delivery') {
+        const wrapper = document.createElement('div'); wrapper.id = 'checkout-location'; wrapper.innerHTML = delivery.markup(); $('.delivery-fields', root).after(wrapper);
+      }
+      const receipt = document.createElement('section'); receipt.id = 'checkout-receipt'; receipt.className = 'receipt-checkout-card'; receipt.innerHTML = receiptMarkup(); ($('.payment-info', root) || $('.payment-choice', root)).after(receipt);
+      action.innerHTML = `<button id="confirm-order" ${state.receiptBusy ? 'disabled' : ''}>Confirmar pedido · ${money(total())}</button>`; return;
     }
     if (!state.cart.length) { root.innerHTML = '<div class="cart-empty"><i>♢</i><h3>Tu pedido está vacío</h3><p>Explora el menú y agrega algo delicioso.</p><button id="explore-menu">Explorar el menú</button></div>'; action.innerHTML = ''; return; }
     const issues = cartAvailabilityIssues();
@@ -385,6 +410,8 @@ window.JUANELOS_CONFIG = Object.freeze({
   }
   function guideCheckoutField(selector,title,copy) { const field = $(selector,$('#checkout-form')); if (!field) return; const target = field.type === 'radio' ? field.closest('.checkout-choice') : field.closest('label'); target.classList.add('checkout-attention'); target.scrollIntoView({behavior:'smooth',block:'center'}); field.focus({preventScroll:true}); toast(title,copy); }
   async function confirmOrder() {
+    if (state.cartStep === 'sending' || state.receiptBusy) return;
+    if (delivery.preparing) return toast('Un momento', 'Espera a que termine la solicitud de ubicación o continúa sin compartirla.');
     const digits = state.customer.phone.replace(/\D/g,'');
     if (cartAvailabilityIssues().length) {
       showAvailabilityAlert();
@@ -403,15 +430,20 @@ window.JUANELOS_CONFIG = Object.freeze({
       subtotal:subtotal(),paymentMethod:selectedPayment?.name || state.payment,paymentValue:selectedPayment?.account_value || '',notes:state.customer.notes,
       items:state.cart.map(item => ({ productId:item.productId,name:(productById(item.productId) || item.productSnapshot).name,quantity:item.quantity,unitPrice:item.unitPrice,selections:Object.values(item.selectionLabels || {}).flat() }))
     };
+    if (state.receipt) order.receipt = { name:state.receipt.name, mimeType:state.receipt.mimeType, base64:state.receipt.base64 };
+    if (state.fulfillment === 'delivery' && delivery.payload()) order.liveLocation = delivery.payload();
     state.cartStep = 'sending';
     renderCart();
     try {
+      if (order.receipt) await window.JuanelosServices.requireCapability('receipts');
+      if (order.liveLocation) await window.JuanelosServices.requireCapability('liveLocation');
       const response = await fetch(CONFIG.appsScriptUrl, { method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'createOrder',order,supabaseUrl:CONFIG.supabaseUrl,supabaseAnonKey:CONFIG.supabaseAnonKey}) });
       const result = await response.json(); if (!result.ok) throw new Error(result.error || 'No se pudo crear la orden.');
       if (state.orderSignal) void state.orderSignal.send({ type:'broadcast', event:'order-created', payload:{ orderId:result.orderId } });
-      state.lastOrderId = result.orderId; state.orderTotal = result.total; state.cartStep = 'success'; state.cart = []; saveCart(); renderCart();
       const whatsappUrl = orderWhatsAppUrl(order, result.orderId, result.total);
-      setTimeout(() => { window.location.assign(whatsappUrl); }, 900);
+      if (result.locationEnabled && order.liveLocation) delivery.bind(result.orderId);
+      state.lastWhatsappUrl = whatsappUrl; state.lastOrderId = result.orderId; state.orderTotal = result.total; state.cartStep = 'success'; state.cart = []; state.receipt = null; saveCart(); renderCart();
+      if (!delivery.active) setTimeout(() => { window.location.assign(whatsappUrl); }, 900);
     } catch (error) { state.cartStep = 'checkout'; renderCart(); toast('No pudimos enviar la orden', error.message || 'Intenta nuevamente.'); }
   }
 
@@ -434,6 +466,8 @@ window.JUANELOS_CONFIG = Object.freeze({
     if (state.cartStep === 'success') { state.cartStep = 'cart'; state.customer = {name:'',phone:'',address:'',neighborhood:'',notes:''}; }
   });
   $('#cart-content').addEventListener('click', event => {
+    if (event.target.closest('#checkout-location-toggle')) { if (delivery.active) void delivery.stop(); else delivery.open(); return; }
+    if (event.target.closest('#receipt-remove')) { state.receiptRevision++; state.receiptBusy = false; state.receipt = null; $('#checkout-receipt').innerHTML = receiptMarkup(); $('#confirm-order').disabled = false; return; }
     const remove = event.target.closest('[data-delete]'); if (remove) { state.cart = state.cart.filter(item => item.key !== remove.dataset.delete); saveCart(); renderCart(); return; }
     const edit = event.target.closest('[data-edit]'); if (edit) { const item = state.cart.find(entry => entry.key === edit.dataset.edit); hideOverlay('cart'); openProduct(productById(item.productId) || item.productSnapshot,item); return; }
     const quantity = event.target.closest('[data-quantity] [data-qty]'); if (quantity) { const wrapper = quantity.closest('[data-quantity]'), item = state.cart.find(entry => entry.key === wrapper.dataset.quantity); item.quantity = Math.max(1,item.quantity + (quantity.dataset.qty === 'plus' ? 1 : -1)); saveCart(); renderCart(); return; }
@@ -443,9 +477,10 @@ window.JUANELOS_CONFIG = Object.freeze({
     if (event.target.closest('#finish-order') || event.target.closest('#success-close')) { hideOverlay('cart'); state.cartStep = 'cart'; state.customer = {name:'',phone:'',address:'',neighborhood:'',notes:''}; }
   });
   $('#cart-content').addEventListener('input', event => {
+    if (event.target.name === 'receiptFile') return;
     if (!event.target.name) return;
     event.target.closest('.checkout-attention')?.classList.remove('checkout-attention');
-    if (event.target.name === 'fulfillment') { state.fulfillment = event.target.value; if (state.fulfillment === 'pickup') state.selectedNeighborhood = null; renderCart(); return; }
+    if (event.target.name === 'fulfillment') { state.fulfillment = event.target.value; if (state.fulfillment === 'pickup') { state.selectedNeighborhood = null; if (!delivery.confirmed) void delivery.stop(); } renderCart(); return; }
     if (event.target.name === 'payment') { state.payment = event.target.value; renderCart(); return; }
     state.customer[event.target.name] = event.target.value;
     if (event.target.name === 'notes') $('#note-count').textContent = event.target.value.length;
@@ -453,6 +488,7 @@ window.JUANELOS_CONFIG = Object.freeze({
     if (event.target.name === 'neighborhood') { setNeighborhood(event.target.value); const current = event.target.value; const selected = state.selectedNeighborhood; if (selected) { state.customer.neighborhood = selected.name; event.target.value = selected.name; setTimeout(renderCart,0); } else state.customer.neighborhood = current; }
   });
   $('#cart-action').addEventListener('click', event => { if (event.target.closest('#go-checkout')) { state.cartStep = 'checkout'; renderCart(); } if (event.target.closest('#confirm-order')) void confirmOrder(); });
+  $('#cart-content').addEventListener('change', event => { if (event.target.name === 'receiptFile') void selectReceipt(event.target.files?.[0]); });
   $('#favorites').addEventListener('click', () => toast('Tus favoritos','Toca el corazón de un producto para guardarlo.'));
   $('#profile').addEventListener('click', () => toast('Perfil','Tus pedidos se coordinan con Juanelos por WhatsApp.'));
   document.body.classList.add('modal-open');

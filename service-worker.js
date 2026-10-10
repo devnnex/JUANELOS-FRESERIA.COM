@@ -1,9 +1,22 @@
-const CACHE_NAME = 'juanelos-pwa-v5';
+const CACHE_NAME = 'juanelos-pwa-v6-delivery';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './order-services.js',
+  './order-extras.js',
+  './order-extras.css',
+  './admin-extras.js',
+  './admin-extras.css',
+  './enlaces.html',
+  './enlaces.css',
+  './enlaces.js',
+  './ubicacion.html',
+  './ubicacion.css',
+  './ubicacion.js',
+  './vendor/leaflet/leaflet.js',
+  './vendor/leaflet/leaflet.css',
   './manifest.webmanifest',
   './admin.html',
   './admin.css',

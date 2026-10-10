@@ -229,3 +229,11 @@ button:disabled{cursor:not-allowed}.product-card:active{transform:scale(.985)}
 @keyframes sending-spin{to{transform:rotate(360deg)}}@keyframes sending-float{50%{transform:translateY(-9px) scale(1.12)}}@keyframes sending-progress{0%{transform:translateX(-110%)}50%{transform:translateX(85%)}100%{transform:translateX(245%)}}@keyframes message-in{from{opacity:0;transform:translateY(5px)}}@keyframes success-pop{from{opacity:0;transform:scale(.45) rotate(-12deg)}}@keyframes check-draw{to{stroke-dashoffset:0}}@keyframes confetti-fall{0%{transform:translate3d(0,-25px,0) rotate(var(--rotation));opacity:0}8%{opacity:1}100%{transform:translate3d(var(--drift),110dvh,0) rotate(calc(var(--rotation) + 720deg));opacity:.9}}
 @media(max-width:560px){.cart-sheet.celebration-view{height:100dvh;max-height:100dvh;border-radius:0}.sending-experience,.success-celebration{padding-inline:22px}.success-celebration{justify-content:center}.success-close{top:max(16px,env(safe-area-inset-top));right:16px}}
 @media(prefers-reduced-motion:reduce){button,a,[role="button"]{transition:none}.sending-orbit:before,.sending-orbit:after,.sending-orbit>span,.sending-progress i{animation-duration:2.6s}.confetti-piece{animation:none;display:none}.success-mark,.success-mark svg path{animation:none}.success-mark svg path{stroke-dashoffset:0}}
+
+/* Navegación centrada y señal suave del pedido. */
+@media(min-width:1024px){.bottom-nav{left:50%;right:auto;transform:translateX(-50%)}}
+@media(max-width:1023px){.toast.cart-feedback{bottom:calc(126px + env(safe-area-inset-bottom,0px))}}
+.bottom-nav #nav-cart.has-items i::after{content:"";position:absolute;inset:-3px;border:2px solid #55ddf0;border-radius:50%;pointer-events:none;box-shadow:0 0 10px rgba(85,221,240,.45);animation:cart-ring-glow 2.4s ease-in-out infinite}
+.bottom-nav #nav-cart i .cart-count{z-index:1}
+@keyframes cart-ring-glow{0%,100%{opacity:.6;box-shadow:0 0 0 0 rgba(85,221,240,.1),0 0 6px rgba(85,221,240,.25)}50%{opacity:1;box-shadow:0 0 0 5px rgba(85,221,240,.16),0 0 18px rgba(85,221,240,.55)}}
+@media(prefers-reduced-motion:reduce){.bottom-nav #nav-cart.has-items i::after{animation:none}}

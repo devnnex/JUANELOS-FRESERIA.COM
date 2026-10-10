@@ -9,6 +9,7 @@
 
 const SPREADSHEET_ID = '1sSL9ddfS4Jcp7vgmAxMXx3-B4EJTiPmRRXg-ReQz-Vo';
 const IMAGE_FOLDER_PROPERTY = 'JUANELOS_IMAGES_FOLDER_ID';
+const RECEIPT_FOLDER_PROPERTY = 'JUANELOS_RECEIPTS_FOLDER_ID';
 const BACKEND_URL_PROPERTY = 'JUANELOS_SUPABASE_URL';
 const BACKEND_KEY_PROPERTY = 'JUANELOS_SUPABASE_ANON_KEY';
 const MAX_IMAGE_BYTES = 2.5 * 1024 * 1024;
@@ -23,7 +24,8 @@ const SHEETS = Object.freeze({
       'id', 'sequence', 'createdAt', 'updatedAt', 'status', 'customerName', 'phone',
       'fulfillment', 'address', 'neighborhood', 'deliveryFee', 'subtotal', 'total',
       'paymentMethod', 'paymentValue', 'notes', 'itemsJson', 'handledById',
-      'handledByName', 'messageStatus', 'lastMessageAt'
+      'handledByName', 'messageStatus', 'lastMessageAt',
+      'receiptFileId', 'receiptMimeType', 'receiptName', 'locationViewToken'
     ]
   },
   audit: {
@@ -33,6 +35,14 @@ const SHEETS = Object.freeze({
   config: {
     name: 'Configuracion',
     headers: ['key', 'value']
+  },
+  locations: {
+    name: 'Ubicaciones',
+    headers: ['orderId', 'writerHash', 'viewerHash', 'latitude', 'longitude', 'accuracy', 'updatedAt', 'expiresAt', 'active', 'paused']
+  },
+  links: {
+    name: 'Enlaces',
+    headers: ['id', 'title', 'subtitle', 'url', 'kind', 'sortOrder', 'active', 'updatedAt']
   }
 });
 
@@ -60,6 +70,8 @@ function setupJuanelos() {
   return {
     ok: true,
     service: 'Juanelos Orders API',
+    apiVersion: 2,
+    capabilities: { receipts: true, liveLocation: true, brandLinks: true },
     databaseId: database.getId(),
     spreadsheetUrl: database.getUrl(),
     sheets: Object.values(SHEETS).map(function (definition) {
@@ -81,8 +93,13 @@ function doPost(event) {
     const backend = bindBackend_(payload);
 
     if (action === 'createOrder') return jsonResponse_(createOrder_(payload.order, backend));
+    if (action === 'updateCustomerLocation') return jsonResponse_(updateCustomerLocation_(payload));
+    if (action === 'stopCustomerLocation') return jsonResponse_(stopCustomerLocation_(payload));
+    if (action === 'pauseCustomerLocation') return jsonResponse_(pauseCustomerLocation_(payload));
+    if (action === 'getCustomerLocation') return jsonResponse_(getCustomerLocation_(payload));
+    if (action === 'getPublicLinks') return jsonResponse_({ ok: true, links: readBrandLinks_().filter(function (link) { return link.active; }) });
 
-    const permission = action === 'uploadImage' ? 'products' : 'orders';
+    const permission = action === 'uploadImage' ? 'products' : /^(getBrandLinks|mutateBrandLink)$/.test(action) ? 'links' : 'orders';
     const session = validateAdmin_(payload, permission, backend);
     if (!session.valid) throw new Error('Sesión vencida o sin permisos.');
 
@@ -91,6 +108,9 @@ function doPost(event) {
     if (action === 'deleteOrder') return jsonResponse_(deleteOrder_(payload.orderId, session.user, backend));
     if (action === 'deleteAllOrders') return jsonResponse_(deleteAllOrders_(session.user, backend));
     if (action === 'uploadImage') return jsonResponse_(uploadImage_(payload, session.user));
+    if (action === 'getOrderReceipt') return jsonResponse_(getOrderReceipt_(payload.orderId));
+    if (action === 'getBrandLinks') return jsonResponse_({ ok: true, links: readBrandLinks_() });
+    if (action === 'mutateBrandLink') return jsonResponse_(mutateBrandLink_(payload, session.user));
 
     throw new Error('Acción no reconocida.');
   } catch (error) {
@@ -160,6 +180,8 @@ function createOrder_(rawOrder, backend) {
   const customerName = cleanText_(rawOrder.customerName, 80);
   const phone = cleanText_(rawOrder.phone, 25);
   if (customerName.length < 2 || phone.replace(/\D/g, '').length < 7) throw new Error('Nombre o teléfono inválido.');
+  const receiptBytes = rawOrder.receipt ? validateReceipt_(rawOrder.receipt) : null;
+  const sharedLocation = rawOrder.fulfillment === 'delivery' && rawOrder.liveLocation ? validateSharedLocation_(rawOrder.liveLocation) : null;
 
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -203,15 +225,44 @@ function createOrder_(rawOrder, backend) {
       handledById: '',
       handledByName: '',
       messageStatus: '',
-      lastMessageAt: ''
+      lastMessageAt: '',
+      receiptFileId: '',
+      receiptMimeType: '',
+      receiptName: '',
+      locationViewToken: sharedLocation ? sharedLocation.viewerToken : ''
     };
 
-    appendObject_(orderSheet, SHEETS.orders.headers, row);
+    let receiptFile = null;
+    let locationRow = 0;
+    try {
+      if (receiptBytes) {
+        const receipt = rawOrder.receipt;
+        receiptFile = getReceiptFolder_().createFile(Utilities.newBlob(receiptBytes, receipt.mimeType, id + '-comprobante.' + (receipt.mimeType === 'image/png' ? 'png' : receipt.mimeType === 'image/webp' ? 'webp' : 'jpg')));
+        // El comprobante permanece privado. Solo se sirve al administrador autenticado.
+        row.receiptFileId = receiptFile.getId();
+        row.receiptMimeType = receipt.mimeType;
+        row.receiptName = cleanText_(receipt.name || 'Comprobante de pago', 120);
+      }
+      if (sharedLocation) {
+        const locationSheet = database.getSheetByName(SHEETS.locations.name);
+        appendObject_(locationSheet, SHEETS.locations.headers, {
+          orderId: id, writerHash: tokenHash_(sharedLocation.writerToken), viewerHash: tokenHash_(sharedLocation.viewerToken),
+          latitude: sharedLocation.latitude, longitude: sharedLocation.longitude, accuracy: sharedLocation.accuracy,
+          updatedAt: sharedLocation.observedAt, expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), active: true, paused: false
+        });
+        locationRow = locationSheet.getLastRow();
+      }
+      appendObject_(orderSheet, SHEETS.orders.headers, row);
+    } catch (error) {
+      if (receiptFile) receiptFile.setTrashed(true);
+      if (locationRow) database.getSheetByName(SHEETS.locations.name).deleteRow(locationRow);
+      throw error;
+    }
     writeConfig_('nextSequence', String(sequence + 1));
     const revision = bumpRevision_();
     appendAudit_({ id: '', displayName: 'Cliente' }, 'crear_orden', id, { total: total, phone: phone });
     publishOrderEvent_(backend, id, revision, 'created');
-    return { ok: true, orderId: id, sequence: sequence, total: total };
+    return { ok: true, orderId: id, sequence: sequence, total: total, receiptAttached: Boolean(receiptFile), locationEnabled: Boolean(sharedLocation) };
   } finally {
     lock.releaseLock();
   }
@@ -284,6 +335,7 @@ function deleteOrder_(orderId, user, backend) {
   const sheet = ensureDatabase_().getSheetByName(SHEETS.orders.name);
   const rowNumber = findRow_(sheet, 'id', cleanId);
   if (!rowNumber) throw new Error('Orden no encontrada.');
+  removeOrderAttachments_(cleanId);
   sheet.deleteRow(rowNumber);
   const revision = bumpRevision_();
   appendAudit_(user, 'eliminar_orden', cleanId, {});
@@ -294,11 +346,27 @@ function deleteOrder_(orderId, user, backend) {
 function deleteAllOrders_(user, backend) {
   const sheet = ensureDatabase_().getSheetByName(SHEETS.orders.name);
   const count = Math.max(0, sheet.getLastRow() - 1);
+  readObjects_(sheet, SHEETS.orders.headers).forEach(function (order) { removeOrderAttachments_(order.id); });
   if (count) sheet.deleteRows(2, count);
   const revision = bumpRevision_();
   appendAudit_(user, 'eliminar_todas_ordenes', '*', { deletedCount: count });
   publishOrderEvent_(backend, '*', revision, 'deleted');
   return { ok: true, revision: revision, deletedCount: count };
+}
+
+function removeOrderAttachments_(orderId) {
+  const database = ensureDatabase_();
+  const locations = database.getSheetByName(SHEETS.locations.name);
+  const locationRow = findRow_(locations, 'orderId', orderId);
+  if (locationRow) locations.deleteRow(locationRow);
+  const orders = database.getSheetByName(SHEETS.orders.name);
+  const orderRow = findRow_(orders, 'id', orderId);
+  if (!orderRow) return;
+  const fileId = orders.getRange(orderRow, SHEETS.orders.headers.indexOf('receiptFileId') + 1).getValues()[0][0];
+  if (fileId) {
+    try { DriveApp.getFileById(fileId).setTrashed(true); }
+    catch (error) { console.warn('No se pudo retirar el comprobante de la orden ' + orderId); }
+  }
 }
 
 function uploadImage_(payload, user) {
@@ -315,6 +383,128 @@ function uploadImage_(payload, user) {
   appendAudit_(user, 'subir_imagen', file.getId(), { filename: filename });
   bumpRevision_();
   return { ok: true, url: 'https://drive.google.com/uc?export=view&id=' + file.getId() };
+}
+
+function validateReceipt_(receipt) {
+  if (!receipt || !/^image\/(png|jpeg|webp)$/.test(receipt.mimeType || '')) throw new Error('El comprobante debe ser PNG, JPG o WebP.');
+  const encoded = String(receipt.base64 || '');
+  if (encoded.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new Error('El comprobante supera el tamaño permitido o es inválido.');
+  const bytes = Utilities.base64Decode(encoded);
+  const unsigned = bytes.map(function (byte) { return byte & 255; });
+  const valid = receipt.mimeType === 'image/jpeg' ? unsigned[0] === 255 && unsigned[1] === 216 && unsigned[2] === 255
+    : receipt.mimeType === 'image/png' ? [137, 80, 78, 71, 13, 10, 26, 10].every(function (byte, i) { return unsigned[i] === byte; })
+    : [82, 73, 70, 70].every(function (byte, i) { return unsigned[i] === byte; }) && [87, 69, 66, 80].every(function (byte, i) { return unsigned[i + 8] === byte; });
+  if (!valid || !bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error('El comprobante no es una imagen válida.');
+  return bytes;
+}
+
+function getReceiptFolder_() {
+  const properties = PropertiesService.getScriptProperties();
+  const storedId = properties.getProperty(RECEIPT_FOLDER_PROPERTY);
+  if (storedId) { try { return DriveApp.getFolderById(storedId); } catch (error) { /* recuperar carpeta */ } }
+  const folder = DriveApp.createFolder('Juanelos · Comprobantes privados');
+  properties.setProperty(RECEIPT_FOLDER_PROPERTY, folder.getId());
+  return folder;
+}
+
+function getOrderReceipt_(orderId) {
+  const sheet = ensureDatabase_().getSheetByName(SHEETS.orders.name);
+  const rowNumber = findRow_(sheet, 'id', cleanText_(orderId, 80));
+  if (!rowNumber) throw new Error('La orden no existe.');
+  const values = sheet.getRange(rowNumber, 1, 1, SHEETS.orders.headers.length).getValues()[0];
+  const fileId = values[SHEETS.orders.headers.indexOf('receiptFileId')];
+  const mimeType = values[SHEETS.orders.headers.indexOf('receiptMimeType')];
+  if (!fileId || !/^image\/(png|jpeg|webp)$/.test(mimeType)) throw new Error('Esta orden no tiene un comprobante adjunto.');
+  const file = DriveApp.getFileById(fileId);
+  if (file.isTrashed() || file.getSize() > MAX_IMAGE_BYTES) throw new Error('El comprobante ya no está disponible.');
+  return { ok: true, mimeType: mimeType, base64: Utilities.base64Encode(file.getBlob().getBytes()) };
+}
+
+function tokenHash_(value) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value || '')).map(function (byte) { return ('0' + (byte & 255).toString(16)).slice(-2); }).join('');
+}
+
+function validateCoordinates_(data) {
+  const latitude = Number(data.latitude), longitude = Number(data.longitude), accuracy = Number(data.accuracy);
+  if (data.latitude === null || data.longitude === null || !Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(accuracy) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || accuracy < 0 || accuracy > 100000) throw new Error('La ubicación no es válida.');
+  const observedAt = new Date(data.observedAt).getTime();
+  if (!Number.isFinite(observedAt) || observedAt > Date.now() + 60000 || observedAt < Date.now() - 5 * 60000) throw new Error('La posición está desactualizada. Vuelve a solicitar tu ubicación.');
+  return { latitude: latitude, longitude: longitude, accuracy: accuracy, observedAt: new Date(observedAt).toISOString() };
+}
+
+function validateSharedLocation_(data) {
+  if (!/^[a-f0-9]{64}$/.test(data.writerToken || '') || !/^[a-f0-9]{64}$/.test(data.viewerToken || '') || data.writerToken === data.viewerToken) throw new Error('No se pudo crear el enlace de ubicación.');
+  return Object.assign(validateCoordinates_(data), { writerToken: data.writerToken, viewerToken: data.viewerToken });
+}
+
+function locationAccess_(payload, writer) {
+  const token = String(writer ? payload.writerToken : payload.viewerToken);
+  if (!/^[a-f0-9]{64}$/.test(token)) throw new Error('El enlace de ubicación no es válido.');
+  const sheet = ensureDatabase_().getSheetByName(SHEETS.locations.name);
+  const rowNumber = findRow_(sheet, 'orderId', cleanText_(payload.orderId, 80));
+  if (!rowNumber) throw new Error('La ubicación no está disponible.');
+  const values = sheet.getRange(rowNumber, 1, 1, SHEETS.locations.headers.length).getValues()[0];
+  const data = SHEETS.locations.headers.reduce(function (object, key, i) { object[key] = values[i]; return object; }, {});
+  if (data[writer ? 'writerHash' : 'viewerHash'] !== tokenHash_(token)) throw new Error('El enlace de ubicación no es válido.');
+  return { sheet: sheet, rowNumber: rowNumber, data: data };
+}
+
+function updateCustomerLocation_(payload) {
+  const coords = validateCoordinates_(payload);
+  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    const access = locationAccess_(payload, true);
+    if (access.data.active !== true || new Date(access.data.expiresAt).getTime() <= Date.now()) throw new Error('La ubicación compartida terminó.');
+    if (new Date(coords.observedAt).getTime() < new Date(access.data.updatedAt).getTime()) return { ok: true, updatedAt: access.data.updatedAt, expiresAt: access.data.expiresAt };
+    updateRow_(access.sheet, access.rowNumber, SHEETS.locations.headers, { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy, updatedAt: coords.observedAt, paused: false });
+    return { ok: true, updatedAt: coords.observedAt, expiresAt: access.data.expiresAt };
+  } finally { lock.releaseLock(); }
+}
+
+function stopCustomerLocation_(payload) {
+  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    const access = locationAccess_(payload, true);
+    updateRow_(access.sheet, access.rowNumber, SHEETS.locations.headers, { active: false, latitude: '', longitude: '', accuracy: '', updatedAt: new Date().toISOString() });
+    return { ok: true };
+  } finally { lock.releaseLock(); }
+}
+
+function getCustomerLocation_(payload) {
+  const access = locationAccess_(payload, false), data = access.data;
+  if (data.active !== true || new Date(data.expiresAt).getTime() <= Date.now()) return { ok: true, active: false };
+  return { ok: true, active: true, paused: data.paused === true, orderId: data.orderId, latitude: Number(data.latitude), longitude: Number(data.longitude), accuracy: Number(data.accuracy), updatedAt: data.updatedAt, expiresAt: data.expiresAt };
+}
+
+function pauseCustomerLocation_(payload) {
+  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  try { const access = locationAccess_(payload, true); updateRow_(access.sheet, access.rowNumber, SHEETS.locations.headers, { paused: true }); return { ok: true }; }
+  finally { lock.releaseLock(); }
+}
+
+function readBrandLinks_() {
+  return readObjects_(ensureDatabase_().getSheetByName(SHEETS.links.name), SHEETS.links.headers).sort(function (a, b) { return Number(a.sortOrder) - Number(b.sortOrder); });
+}
+
+function mutateBrandLink_(payload, user) {
+  const data = payload.link || {}, action = payload.operation;
+  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    const sheet = ensureDatabase_().getSheetByName(SHEETS.links.name);
+    const id = cleanText_(data.id, 80) || Utilities.getUuid(), row = findRow_(sheet, 'id', id);
+    if (action === 'delete') { if (!row) throw new Error('El enlace ya no existe.'); sheet.deleteRow(row); }
+    else if (action === 'save') {
+      const title = cleanText_(data.title, 60), url = String(data.url || '').trim();
+      if (title.length < 2 || url.length > 1000 || !/^https:\/\/[a-z0-9][a-z0-9.-]*(?::[0-9]+)?(?:[/?#][^\s<>]*)?$/i.test(url)) throw new Error('Ingresa un título y un enlace HTTPS válido.');
+      const record = { id: id, title: title, subtitle: cleanText_(data.subtitle, 120), url: url,
+        kind: ['instagram','tiktok','facebook','whatsapp','web','maps'].indexOf(data.kind) >= 0 ? data.kind : 'web',
+        sortOrder: Math.max(0, Math.min(999, Math.floor(Number(data.sortOrder) || 0))), active: data.active === true, updatedAt: new Date().toISOString() };
+      if (data.id && !row) throw new Error('El enlace ya no existe. Actualiza la lista.');
+      if (row) updateRow_(sheet, row, SHEETS.links.headers, record); else appendObject_(sheet, SHEETS.links.headers, record);
+    } else throw new Error('Acción no válida.');
+    appendAudit_(user, action === 'delete' ? 'eliminar_enlace' : 'guardar_enlace', id, { title: cleanText_(data.title, 60) });
+    return { ok: true, links: readBrandLinks_() };
+  } finally { lock.releaseLock(); }
 }
 
 function getImageFolder_() {
@@ -463,7 +653,8 @@ function readObjects_(sheet, headers) {
 }
 
 function findRow_(sheet, header, value) {
-  const column = SHEETS.orders.headers.indexOf(header) + 1;
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const column = headers.indexOf(header) + 1;
   if (column < 1 || sheet.getLastRow() < 2) return 0;
   const match = sheet.getRange(2, column, sheet.getLastRow() - 1, 1).createTextFinder(value).matchEntireCell(true).findNext();
   return match ? match.getRow() : 0;

@@ -12,6 +12,8 @@
   <link rel="apple-touch-icon" href="./images/juanelos-app-icon-192.png" />
   <link rel="manifest" href="./admin.webmanifest" />
   <link rel="stylesheet" href="./admin.css" />
+  <link rel="stylesheet" href="./order-extras.css?v=20261010-1" />
+  <link rel="stylesheet" href="./admin-extras.css?v=20261010-1" />
 </head>
 <body class="admin-page">
   <main class="auth-shell" id="auth-shell">
@@ -37,6 +39,7 @@
         <button data-section="toppings" data-permission="toppings"><span>✦</span>Toppings</button>
         <button data-section="payments" data-permission="payments"><span>▣</span>Banco y pagos</button>
         <button data-section="neighborhoods" data-permission="neighborhoods"><span>⌖</span>Barrios</button>
+        <button data-section="links" data-permission="links"><span>↗</span>Enlaces de Juanelos</button>
         <button data-section="users" data-permission="users"><span>◎</span>Usuarios</button>
       </nav>
       <div class="sidebar-user"><div class="avatar" id="user-avatar">J</div><div><strong id="user-name">Jefe</strong><span id="user-role">Administrador</span></div><button id="logout" aria-label="Cerrar sesión">↪</button></div>
@@ -75,6 +78,13 @@
         <div class="table-card"><div class="responsive-table" id="neighborhoods-admin"></div></div>
       </section>
 
+      <section class="panel" data-panel="links">
+        <div class="panel-heading"><div><h2>Enlaces de Juanelos</h2><p>Tu página de marca, siempre actualizada desde aquí.</p></div><div class="panel-actions"><a class="secondary-button brand-links-page" href="./enlaces.html" target="_blank" rel="noopener noreferrer">Ver página ↗</a><button type="button" class="primary-button compact" id="new-brand-link" disabled>+ Agregar enlace</button></div></div>
+        <div class="brand-links-intro"><img src="./images/juanelos-logo.png" alt="Juanelos"><div><strong>Un espacio propio para tu marca</strong><p>Agrega tus redes y destinos oficiales. El título, la descripción y el icono se adaptan a cada tarjeta. Los enlaces con menor orden aparecen primero.</p></div></div>
+        <div class="brand-links-toolbar"><p id="brand-links-status" role="status"></p><button type="button" class="secondary-button" id="refresh-brand-links">Actualizar</button></div>
+        <div class="admin-grid" id="brand-links-admin"></div>
+      </section>
+
       <section class="panel" data-panel="users">
         <div class="panel-heading"><div><h2>Usuarios del equipo</h2><p>Crea accesos y define exactamente qué puede gestionar cada persona.</p></div><button class="primary-button compact" id="new-user">+ Crear usuario</button></div>
         <div class="user-grid" id="users-admin"></div>
@@ -100,7 +110,9 @@
   <div class="platform-notifications" id="platform-notifications" aria-live="assertive"></div>
   <div class="toast" id="admin-toast" hidden role="status" aria-live="polite"><strong></strong><span></span></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./app.js?v=20261004-1"></script>
-  <script src="./admin.js?v=20261004-1"></script>
+  <script src="./app.js?v=20261010-1"></script>
+  <script src="./order-services.js?v=20261010-1"></script>
+  <script src="./admin-extras.js?v=20261010-1"></script>
+  <script src="./admin.js?v=20261010-1"></script>
 </body>
 </html>
