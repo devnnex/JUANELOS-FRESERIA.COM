@@ -9,7 +9,7 @@ Aplicación web estática con carta para clientes, panel administrativo, catálo
    - Ejecutar como: **Yo**.
    - Quién tiene acceso: **Cualquier persona**.
 3. `Code.gs` está vinculado al archivo `1sSL9ddfS4Jcp7vgmAxMXx3-B4EJTiPmRRXg-ReQz-Vo`. No crees hojas ni columnas manualmente: la primera solicitud normal del sitio las crea automáticamente dentro de ese archivo.
-4. En las primeras líneas de `app.js`, cambia únicamente:
+4. En las primeras líneas de `config.js`, cambia únicamente:
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
    - `APPS_SCRIPT_URL`
@@ -57,3 +57,17 @@ Al visitar la URL de Apps Script, debe responder `apiVersion: 2` y capacidades `
 - El mapa usa Leaflet 1.9.4 incluido localmente y cartografía OpenStreetMap con atribución. Si la cartografía no está disponible, puede abrirse la última posición en Google Maps.
 
 Verificación del servidor sin conexiones externas: `node --test scripts/order-backend.test.mjs`. El recorrido de navegador se verifica con Playwright, el servidor local en el puerto 3000 y `node scripts/order-browser.test.mjs`; se puede indicar una instalación externa con `JUANELOS_PLAYWRIGHT_MODULE` y un Chrome local con `JUANELOS_CHROME`.
+
+## Rendimiento
+
+La configuración compartida está ahora en `config.js`. El admin, el mapa y la página de enlaces cargan esta configuración pequeña sin descargar el código de la carta. Supabase JS 2.117.3 se incluye localmente en `vendor/supabase/`, con su licencia, para eliminar la dependencia del CDN al abrir el sitio.
+
+Las nueve imágenes principales tienen versiones WebP en `images/optimized/`: pasan de 19.84 MB a 2.28 MB en total (89 % menos), conservando los originales y la transparencia. Las imágenes nuevas de productos también se optimizan antes de subirlas: hasta 1600 píxeles y WebP de calidad alta, siempre que pese menos que el archivo original. No cambia el límite de carga de 2.5 MB.
+
+La carta y los enlaces muestran una caché pública de hasta tres minutos mientras consultan los datos actuales. Confirmar un pedido requiere que la carta se haya validado con Supabase en la visita actual. El admin reutiliza datos de la misma pestaña durante un máximo de un minuto, solo después de validar la sesión y comprobar que el usuario, el token y los permisos coinciden. La caché privada se elimina al cerrar sesión o detectar una sesión inválida; las imágenes de comprobantes no se guardan en ella.
+
+El admin conecta Realtime antes de esperar el catálogo y las órdenes, agrupa avisos repetidos y conserva una actualización pendiente cuando llega un evento durante otra consulta. Solo renderiza la sección de catálogo visible; las imágenes de productos del admin se cargan de forma diferida. Los formatos de moneda y fecha se reutilizan. Apps Script reutiliza respuestas pequeñas por revisión durante 60 segundos y lee solo las últimas 1200 filas de auditoría. Cada cambio genera una nueva revisión y las consultas siguen exigiendo autorización. **Para activar esta mejora del servidor, vuelve a desplegar el `Code.gs` actualizado en la implementación existente.** No requiere cambios de SQL en Supabase.
+
+El service worker se instala durante un momento libre del navegador en todas las páginas. Reutiliza las páginas guardadas y las actualiza en segundo plano, y guarda los recursos con versión para las siguientes visitas. Solo almacena recursos estáticos del sitio; las APIs de órdenes, comprobantes y ubicación quedan excluidas. [Referencia del patrón de actualización de caché](https://web.dev/articles/stale-while-revalidate).
+
+`node scripts/performance-browser.test.mjs` verifica la interfaz con consultas demoradas 1.6 segundos, carga desde caché, validación antes de confirmar, alertas durante la carga inicial, actualizaciones durante consultas pendientes, autorización de la caché privada y navegación sin conexión. Las mediciones son de un navegador local con servicios simulados; los tiempos en producción dependen de la conexión, el dispositivo y los servicios externos.

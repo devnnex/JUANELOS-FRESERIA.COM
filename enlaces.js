@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const service = window.JuanelosServices;
+  const fast = window.JuanelosPerformance;
   const paths = {
     instagram:'<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/>',
     tiktok:'<path d="M14 3v12a4 4 0 1 1-4-4M14 3c0 4 3 6 6 6"/>',
@@ -21,9 +22,10 @@
   }
   async function load() {
     if (loading) return; loading = true; root.setAttribute('aria-busy','true');
-    try { const result = await service.api('getPublicLinks'); if (!Array.isArray(result.links)) throw new Error('Enlaces no disponibles'); render(result.links); document.querySelector('#links-status').textContent = ''; }
-    catch { render([]); document.querySelector('#links-status').textContent = 'Puedes hacer tu pedido o escribirnos por WhatsApp. Las redes estarán disponibles al restablecer la conexión.'; }
+    try { const result = await service.api('getPublicLinks'); if (!Array.isArray(result.links)) throw new Error('Enlaces no disponibles'); fast.write('brand-links',result.links,localStorage); render(result.links); document.querySelector('#links-status').textContent = ''; }
+    catch { document.querySelector('#links-status').textContent = 'No pudimos actualizar los enlaces. Puedes hacer tu pedido o escribirnos por WhatsApp.'; }
     finally { loading = false; root.setAttribute('aria-busy','false'); }
   }
-  render([]); void load(); window.addEventListener('online', () => { void load(); }); document.addEventListener('visibilitychange', () => { if (!document.hidden) void load(); });
+  const cachedLinks = fast.read('brand-links',3 * 60000,localStorage);
+  render(Array.isArray(cachedLinks)?cachedLinks:[]); void load(); window.addEventListener('online', () => { void load(); }); document.addEventListener('visibilitychange', () => { if (!document.hidden) void load(); });
 })();

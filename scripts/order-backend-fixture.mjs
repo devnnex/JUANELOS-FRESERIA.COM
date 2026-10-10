@@ -4,6 +4,7 @@ import { createContext, runInContext } from 'node:vm';
 import { createHash, randomUUID } from 'node:crypto';
 
 export function createBackend() {
+  const reads = {};
   class Sheet {
     rows = [];
     constructor(name) { this.name = name; }
@@ -13,7 +14,7 @@ export function createBackend() {
     getRange(row, column, height = 1, width = 1) {
       const sheet = this;
       const range = {
-        getValues: () => Array.from({ length: height }, (_, i) => Array.from({ length: width }, (_, j) => sheet.rows[row - 1 + i]?.[column - 1 + j] ?? '')),
+        getValues: () => { reads[sheet.name] = (reads[sheet.name] || 0) + 1; return Array.from({ length: height }, (_, i) => Array.from({ length: width }, (_, j) => sheet.rows[row - 1 + i]?.[column - 1 + j] ?? '')); },
         setValues(values) { values.forEach((valuesRow, i) => { sheet.rows[row - 1 + i] ||= []; valuesRow.forEach((value, j) => { sheet.rows[row - 1 + i][column - 1 + j] = value; }); }); return range; },
         setValue(value) { return range.setValues([[value]]); },
         setBackground() { return range; }, setFontColor() { return range; }, setFontWeight() { return range; },
@@ -26,7 +27,7 @@ export function createBackend() {
     deleteRows(row, count) { this.rows.splice(row - 1, count); }
     setFrozenRows() {} autoResizeColumns() {} hideColumns() {}
   }
-  const sheets = new Map(), files = new Map(), folders = new Map(), properties = new Map();
+  const sheets = new Map(), files = new Map(), folders = new Map(), properties = new Map(), cache = new Map();
   let now = Date.now();
   class ClockDate extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
   const blob = (bytes, mimeType, name) => ({ getBytes: () => [...bytes], mimeType, name });
@@ -49,7 +50,7 @@ export function createBackend() {
     SpreadsheetApp: { openById: () => database }, DriveApp: drive,
     Session: { getScriptTimeZone: () => 'America/Bogota' },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+    CacheService: { getScriptCache: () => ({ get: key => {const value=cache.get(key);return value&&value.expires>now?value.data:null;}, put(key,data,ttl) {cache.set(key,{data,expires:now+ttl*1000})} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: name => properties.get(name), setProperty(name, value) { properties.set(name, value); }, setProperties(data) { Object.entries(data).forEach(([key, value]) => properties.set(key, value)); } }) },
     Utilities: { DigestAlgorithm: { SHA_256: 'sha256' }, computeDigest: (_, value) => [...createHash('sha256').update(value).digest()], base64Decode: value => [...Buffer.from(value, 'base64')], base64Encode: bytes => Buffer.from(bytes).toString('base64'), base64EncodeWebSafe: bytes => Buffer.from(bytes).toString('base64url'), newBlob: blob, getUuid: randomUUID, formatDate: () => '20261010' },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: value => ({ value, setMimeType() { return this; } }) },
@@ -61,7 +62,7 @@ export function createBackend() {
   });
   runInContext(readFileSync(new URL('../Code.gs', import.meta.url), 'utf8'), context);
   return {
-    sheets, files, context,
+    sheets, files, context, reads,
     advance(ms) { now += ms; }, now: () => now,
     get: () => JSON.parse(context.doGet().value),
     post(action, data = {}) { return JSON.parse(context.doPost({ postData: { contents: JSON.stringify({ action, supabaseUrl: 'https://tests.supabase.co', supabaseAnonKey: 'public-test-key-long-enough', ...data }) } }).value); }

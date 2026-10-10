@@ -1,9 +1,12 @@
-const CACHE_NAME = 'juanelos-pwa-v6-delivery';
+const CACHE_NAME = 'juanelos-pwa-v7-performance';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './config.js',
+  './performance.js',
+  './vendor/supabase/supabase.js?v=2.117.3',
   './order-services.js',
   './order-extras.js',
   './order-extras.css',
@@ -23,18 +26,18 @@ const APP_SHELL = [
   './admin.js',
   './admin.webmanifest',
   './sounds/order-notification.mp3',
-  './images/juanelos-logo.png',
+  './images/optimized/juanelos-logo.webp',
   './images/juanelos-app-icon-192.png',
   './images/juanelos-app-icon-512.png',
-  './images/juanelos-original.png',
-  './images/juanelos-poderosa.png',
-  './images/juanelos-payes.png',
-  './images/juanelos-parfait.png',
-  './images/juanelos-maracu-brownie.png',
-  './images/juanelos-choco-cruch.png',
-  './images/juanelos-fresas.png',
-  './images/juanelos-bebidas.png'
-];
+  './images/optimized/juanelos-original.webp',
+  './images/optimized/juanelos-poderosa.webp',
+  './images/optimized/juanelos-payes.webp',
+  './images/optimized/juanelos-parfait.webp',
+  './images/optimized/juanelos-maracu-brownie.webp',
+  './images/optimized/juanelos-choco-cruch.webp',
+  './images/optimized/juanelos-fresas.webp',
+  './images/optimized/juanelos-bebidas.webp'
+].map(url => /\.(?:js|css)$/.test(url) && !url.startsWith('./vendor/') ? `${url}?v=20261010-2` : url);
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
@@ -47,8 +50,21 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
   const requestUrl = new URL(event.request.url);
+  if (event.request.mode === 'navigate') {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(event.request, {ignoreSearch:true});
+      const network = fetch(event.request).then(response => {
+        if (response.ok) event.waitUntil(cache.put(new Request(requestUrl.origin+requestUrl.pathname),response.clone()));
+        return response;
+      });
+      if (cached) { event.waitUntil(network.catch(() => {})); return cached; }
+      return network;
+    })());
+    return;
+  }
   const mustBeFresh = /\.(?:html|js|css)$/.test(requestUrl.pathname) || requestUrl.pathname.endsWith('/');
-  if (mustBeFresh) {
+  if (mustBeFresh && !requestUrl.searchParams.has('v')) {
     event.respondWith(fetch(event.request).then(response => {
       if (response.ok) void caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
       return response;

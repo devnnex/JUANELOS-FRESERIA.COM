@@ -9,18 +9,20 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Juanelos" />
   <meta name="description" content="¡Los mejores postres! 💙 Pedidos online de Juanelos en Villavicencio." />
+  <link rel="preconnect" href="https://bxyvxbutjlvoconfsjub.supabase.co" crossorigin>
+  <link rel="preconnect" href="https://script.google.com">
   <title>Juanelos — Los mejores postres</title>
   <link rel="icon" type="image/png" href="./images/juanelos-app-icon-192.png" />
   <link rel="apple-touch-icon" href="./images/juanelos-app-icon-192.png" />
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="stylesheet" href="./styles.css?v=20261010-1" />
-  <link rel="stylesheet" href="./order-extras.css?v=20261010-1" />
+  <link rel="stylesheet" href="./styles.css?v=20261010-2" />
+  <link rel="stylesheet" href="./order-extras.css?v=20261010-2" />
 </head>
 <body>
   <main>
     <header class="site-header">
       <div class="header-row">
-        <a class="brand" href="#menu" aria-label="Juanelos, ir al menú"><img src="./images/juanelos-logo.png" alt="Juanelos" /></a>
+        <a class="brand" href="#menu" aria-label="Juanelos, ir al menú"><img src="./images/optimized/juanelos-logo.webp" decoding="async" alt="Juanelos" /></a>
         <p class="slogan">¡LOS MEJORES POSTRES! 💙</p>
         <button class="icon-button" id="header-cart" aria-label="Abrir carrito"><svg class="cart-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9" cy="20" r="1"></circle><circle cx="18" cy="20" r="1"></circle><path d="M3 4h2l2.4 10.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.6L21 7H6"></path></svg><b class="cart-count">0</b></button>
       </div>
@@ -38,10 +40,10 @@
       <div class="hero">
         <div class="hero-copy"><small>POSTRES QUE ENAMORAN</small><h1>Tu antojo<br />más feliz.</h1><a href="#menu">Ver el menú <span>→</span></a></div>
         <div class="hero-visual" aria-label="Selección de postres Juanelos">
-          <img class="hero-smoothie" src="./images/juanelos-original.png" alt="La Original de Juanelos" fetchpriority="high" />
-          <img class="hero-smoothie" src="./images/juanelos-poderosa.png" alt="La Poderosa de Juanelos" />
-          <img class="hero-smoothie" src="./images/juanelos-parfait.png" alt="Parfait de Juanelos" />
-          <img class="hero-smoothie" src="./images/juanelos-payes.png" alt="Carta de Payes de Juanelos" />
+          <img class="hero-smoothie" src="./images/optimized/juanelos-original.webp" decoding="async" alt="La Original de Juanelos" fetchpriority="high" />
+          <img class="hero-smoothie" src="./images/optimized/juanelos-poderosa.webp" decoding="async" alt="La Poderosa de Juanelos" />
+          <img class="hero-smoothie" src="./images/optimized/juanelos-parfait.webp" decoding="async" alt="Parfait de Juanelos" />
+          <img class="hero-smoothie" src="./images/optimized/juanelos-payes.webp" decoding="async" alt="Carta de Payes de Juanelos" />
         </div>
       </div>
       <label class="search"><span>⌕</span><input id="search" type="search" placeholder="¿Qué se te antoja hoy?" autocomplete="off" /><button id="clear-search" type="button" aria-label="Limpiar búsqueda" hidden>×</button></label>
@@ -102,9 +104,11 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden><strong id="toast-title"></strong><span id="toast-copy"></span></div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
-  <script src="./order-services.js?v=20261010-1" defer></script>
-  <script src="./order-extras.js?v=20261010-1" defer></script>
-  <script src="./app.js?v=20261010-1" defer></script>
+  <script src="./config.js?v=20261010-2" defer></script>
+  <script src="./performance.js?v=20261010-2" defer></script>
+  <script src="./vendor/supabase/supabase.js?v=2.117.3" defer></script>
+  <script src="./order-services.js?v=20261010-2" defer></script>
+  <script src="./order-extras.js?v=20261010-2" defer></script>
+  <script src="./app.js?v=20261010-2" defer></script>
 </body>
 </html>

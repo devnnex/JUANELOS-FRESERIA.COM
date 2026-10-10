@@ -1,21 +1,10 @@
-// CONFIGURACIÓN PORTABLE · Cambia únicamente estos tres valores al duplicar el proyecto.
-const SUPABASE_URL = 'https://bxyvxbutjlvoconfsjub.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ4eXZ4YnV0amx2b2NvbmZzanViIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1MDcwNDUsImV4cCI6MjEwMzA4MzA0NX0.-7NfjICnFLbUI952-Vpw8vlNo70-p7J9yB8Inqh_7b8';
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwBXdCrnbY0hRYwyuCfMS83IX_Pi-sCz1QU8NcxN-dVYV2pZgxGFK1YSlv1i9xs-lmv/exec';
-
-window.JUANELOS_CONFIG = Object.freeze({
-  supabaseUrl: SUPABASE_URL,
-  supabaseAnonKey: SUPABASE_ANON_KEY,
-  appsScriptUrl: APPS_SCRIPT_URL
-});
-
 (() => {
   'use strict';
 
-  // admin.html carga este archivo solamente para compartir la configuración anterior.
   if (!document.querySelector('#products')) return;
 
   const CONFIG = window.JUANELOS_CONFIG;
+  const fast = window.JuanelosPerformance;
   const WHATSAPP_NUMBER = '573209370199';
   const isSupabaseConfigured = /^https:\/\/.+\.supabase\.co$/i.test(CONFIG.supabaseUrl)
     && !CONFIG.supabaseAnonKey.includes('PEGA_');
@@ -91,9 +80,11 @@ window.JUANELOS_CONFIG = Object.freeze({
     receipt:null, receiptBusy:false, receiptRevision:0, lastWhatsappUrl:'',
     availabilitySignature:''
   };
+  state.catalogReady = !supabaseClient;
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-  const money = value => new Intl.NumberFormat('es-CO', { style:'currency', currency:'COP', maximumFractionDigits:0 }).format(Number(value) || 0);
+  const moneyFormatter = new Intl.NumberFormat('es-CO', { style:'currency', currency:'COP', maximumFractionDigits:0 });
+  const money = value => moneyFormatter.format(Number(value) || 0);
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
   async function copyText(value) { if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value); window.prompt('Copia este contenido:', value); }
   const delivery = window.JuanelosDelivery;
@@ -174,7 +165,7 @@ window.JUANELOS_CONFIG = Object.freeze({
     }
     if (signature === state.availabilitySignature) return;
     state.availabilitySignature = signature;
-    $('#availability-items').innerHTML = issues.map(issue => `<article class="availability-item"><img src="${escapeHtml(issue.product?.image || './images/juanelos-original.png')}" alt="${escapeHtml(issue.product?.name || 'Producto')}"><div><strong>${escapeHtml(issue.product?.name || 'Producto del pedido')}</strong>${issue.reasons.map(reason => `<span>${escapeHtml(reason)}</span>`).join('')}</div></article>`).join('');
+    $('#availability-items').innerHTML = issues.map(issue => `<article class="availability-item"><img src="${escapeHtml(fast.imageUrl(issue.product?.image) || './images/juanelos-original.png')}" alt="${escapeHtml(issue.product?.name || 'Producto')}"><div><strong>${escapeHtml(issue.product?.name || 'Producto del pedido')}</strong>${issue.reasons.map(reason => `<span>${escapeHtml(reason)}</span>`).join('')}</div></article>`).join('');
     showOverlay('availability');
   }
 
@@ -188,7 +179,32 @@ window.JUANELOS_CONFIG = Object.freeze({
     });
   }
 
-  async function loadStoreData(showError = false) {
+  function applyStoreData(data) {
+      const [productResult,toppingResult,paymentResult,neighborhoodResult] = data;
+      const toppingRows = toppingResult.data || [];
+      toppingCatalog = toppingRows;
+      products = (productResult.data || []).map(row => ({
+        id:row.id,name:row.name,category:row.category,price:Number(row.price),image:fast.imageUrl(row.image_url),
+        description:row.description,badge:row.badge,featured:row.featured,available:row.available,
+        sort_order:row.sort_order,modifiers:buildModifiers(row.modifiers,toppingRows)
+      }));
+      paymentMethods = (paymentResult.data || []).filter(item => item.available !== false);
+      neighborhoods = (neighborhoodResult.data || []).filter(item => item.available !== false);
+      if (state.customer.neighborhood) setNeighborhood(state.customer.neighborhood);
+      categories = ['Para ti', ...new Set(products.map(product => product.category))];
+      if (!categories.includes(state.category)) state.category = 'Para ti';
+      if (!paymentMethods.some(method => method.id === state.payment)) state.payment = paymentMethods[0]?.id || '';
+      renderCategories(); renderProducts();
+      if (!$('#cart-overlay').hidden && ['cart','checkout'].includes(state.cartStep)) renderCart();
+      showAvailabilityAlert();
+  }
+  let catalogLoading = null, catalogQueued = false;
+  function loadStoreData(showError = false, queue = false) {
+    if (catalogLoading) { if (queue) catalogQueued = true; return catalogLoading; }
+    catalogLoading = refreshStoreData(showError).finally(() => { catalogLoading = null; if (catalogQueued) { catalogQueued = false; void loadStoreData(false); } });
+    return catalogLoading;
+  }
+  async function refreshStoreData(showError) {
     if (!supabaseClient) { renderCategories(); renderProducts(); return; }
     try {
       const [productResult,toppingResult,paymentResult,neighborhoodResult] = await Promise.all([
@@ -199,21 +215,10 @@ window.JUANELOS_CONFIG = Object.freeze({
       ]);
       const firstError = [productResult,toppingResult,paymentResult,neighborhoodResult].find(result => result.error)?.error;
       if (firstError) throw firstError;
-      const toppingRows = toppingResult.data || [];
-      toppingCatalog = toppingRows;
-      products = (productResult.data || []).map(row => ({
-        id:row.id,name:row.name,category:row.category,price:Number(row.price),image:row.image_url,
-        description:row.description,badge:row.badge,featured:row.featured,available:row.available,
-        sort_order:row.sort_order,modifiers:buildModifiers(row.modifiers,toppingRows)
-      }));
-      paymentMethods = (paymentResult.data || []).filter(item => item.available !== false);
-      neighborhoods = (neighborhoodResult.data || []).filter(item => item.available !== false);
-      categories = ['Para ti', ...new Set(products.map(product => product.category))];
-      if (!categories.includes(state.category)) state.category = 'Para ti';
-      if (!paymentMethods.some(method => method.id === state.payment)) state.payment = paymentMethods[0]?.id || '';
-      renderCategories(); renderProducts();
-      if (!$('#cart-overlay').hidden) renderCart();
-      showAvailabilityAlert();
+      state.catalogReady = true;
+      const data = [productResult,toppingResult,paymentResult,neighborhoodResult];
+      fast.write('catalog',data,localStorage);
+      applyStoreData(data);
     } catch {
       if (showError) toast('Usando la carta local', 'No fue posible sincronizar con Supabase.');
       renderCategories(); renderProducts();
@@ -223,7 +228,7 @@ window.JUANELOS_CONFIG = Object.freeze({
   function connectRealtime() {
     if (!supabaseClient) return;
     let refreshTimer;
-    const refresh = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(() => loadStoreData(false), 180); };
+    const refresh = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(() => loadStoreData(false,true), 80); };
     state.realtime = supabaseClient.channel('juanelos-storefront')
       .on('postgres_changes',{event:'*',schema:'public',table:'products'},refresh)
       .on('postgres_changes',{event:'*',schema:'public',table:'toppings'},refresh)
@@ -249,7 +254,7 @@ window.JUANELOS_CONFIG = Object.freeze({
     if (!list.length) { root.innerHTML = '<div class="empty"><b>No encontramos ese antojo</b><p>Prueba con otro nombre o explora una categoría.</p><button id="reset-filter">Ver recomendados</button></div>'; return; }
     root.innerHTML = list.map(product => `<article class="product-card ${product.available === false ? 'sold-out' : ''}" data-product="${escapeHtml(product.id)}" tabindex="0" aria-label="${escapeHtml(product.name)}${product.available === false ? ', agotado' : ''}">
       <button class="favorite" data-favorite="${escapeHtml(product.id)}" aria-label="Guardar ${escapeHtml(product.name)}">♡</button>
-      <div class="product-image"><img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}" loading="lazy">${product.badge ? `<span class="product-badge">${escapeHtml(product.badge)}</span>` : ''}${product.available === false ? '<span class="sold-label">Agotado</span>' : ''}</div>
+      <div class="product-image"><img src="${escapeHtml(fast.imageUrl(product.image))}" alt="${escapeHtml(product.name)}" loading="lazy">${product.badge ? `<span class="product-badge">${escapeHtml(product.badge)}</span>` : ''}${product.available === false ? '<span class="sold-label">Agotado</span>' : ''}</div>
       <div class="product-copy"><h3>${escapeHtml(product.name)}</h3><p>${escapeHtml(product.description)}</p><div class="product-foot"><strong>${money(product.price)}</strong><button class="add" ${product.available === false ? 'disabled' : ''} data-add="${escapeHtml(product.id)}" aria-label="Personalizar ${escapeHtml(product.name)}">+</button></div></div>
     </article>`).join('');
   }
@@ -282,7 +287,7 @@ window.JUANELOS_CONFIG = Object.freeze({
       return `<label class="option"><span><input type="${modifier.type === 'single' ? 'radio' : 'checkbox'}" name="${escapeHtml(modifier.id)}" value="${escapeHtml(item.id)}" data-group="${escapeHtml(modifier.id)}" ${checked ? 'checked' : ''}>${escapeHtml(item.name)}</span><em>${item.price ? `+${money(item.price)}` : 'Incluido'}</em></label>`;
     }).join('')}</fieldset>`).join('');
     const complete = !firstMissingGroup();
-    $('#product-detail').innerHTML = `<div class="detail-content"><div class="detail-photo"><img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}"></div><div class="detail-head"><div><h2 id="product-title">${escapeHtml(product.name)}</h2><p>${escapeHtml(product.description)}</p></div><strong>${money(product.price)}</strong></div><div class="modifier-list">${modifiers}<div class="qty-block"><div><strong>Cantidad</strong><small>¿Cuántos quieres?</small></div>${quantityMarkup(state.quantity)}</div></div></div><div class="sticky-action"><button id="add-product" class="${complete ? '' : 'is-disabled'}" aria-disabled="${!complete}">${state.editingKey ? 'Actualizar pedido' : 'Agregar al pedido'} · <span id="detail-total">${money(selectedUnitPrice() * state.quantity)}</span></button></div>`;
+    $('#product-detail').innerHTML = `<div class="detail-content"><div class="detail-photo"><img src="${escapeHtml(fast.imageUrl(product.image))}" alt="${escapeHtml(product.name)}"></div><div class="detail-head"><div><h2 id="product-title">${escapeHtml(product.name)}</h2><p>${escapeHtml(product.description)}</p></div><strong>${money(product.price)}</strong></div><div class="modifier-list">${modifiers}<div class="qty-block"><div><strong>Cantidad</strong><small>¿Cuántos quieres?</small></div>${quantityMarkup(state.quantity)}</div></div></div><div class="sticky-action"><button id="add-product" class="${complete ? '' : 'is-disabled'}" aria-disabled="${!complete}">${state.editingKey ? 'Actualizar pedido' : 'Agregar al pedido'} · <span id="detail-total">${money(selectedUnitPrice() * state.quantity)}</span></button></div>`;
   }
   function refreshDetailTotal() {
     $('#detail-total').textContent = money(selectedUnitPrice() * state.quantity);
@@ -355,7 +360,7 @@ window.JUANELOS_CONFIG = Object.freeze({
     $('#cart-title').textContent = state.cartStep === 'cart' ? 'Tu pedido' : state.cartStep === 'checkout' ? 'Datos del pedido' : state.cartStep === 'sending' ? 'Creando tu orden' : 'Pedido confirmado';
     $('#cart-back').textContent = state.cartStep === 'checkout' ? '←' : '×';
     if (state.cartStep === 'sending') {
-      root.innerHTML = `<div class="sending-experience" role="status" aria-live="polite"><div class="sending-orbit" aria-hidden="true"><span></span><span></span><span></span><div class="sending-logo"><img src="./images/juanelos-app-icon-192.png" alt=""></div></div><small>ESTAMOS PREPARANDO TODO</small><h3>Tu orden va en camino</h3><p id="sending-message" class="message-in">Enviando tu pedido a Juanelos…</p><div class="sending-progress" aria-hidden="true"><i></i></div><div class="sending-tip"><strong>Un momento delicioso</strong><span>No cierres esta ventana mientras confirmamos tu pedido.</span></div></div>`;
+      root.innerHTML = `<div class="sending-experience" role="status" aria-live="polite"><div class="sending-orbit" aria-hidden="true"><span></span><span></span><span></span><div class="sending-logo"><img src="./images/juanelos-app-icon-192.png" alt="" decoding="async" loading="lazy"></div></div><small>ESTAMOS PREPARANDO TODO</small><h3>Tu orden va en camino</h3><p id="sending-message" class="message-in">Enviando tu pedido a Juanelos…</p><div class="sending-progress" aria-hidden="true"><i></i></div><div class="sending-tip"><strong>Un momento delicioso</strong><span>No cierres esta ventana mientras confirmamos tu pedido.</span></div></div>`;
       action.innerHTML = '';
       startSendingMessages();
       return;
@@ -382,7 +387,7 @@ window.JUANELOS_CONFIG = Object.freeze({
     }
     if (!state.cart.length) { root.innerHTML = '<div class="cart-empty"><i>♢</i><h3>Tu pedido está vacío</h3><p>Explora el menú y agrega algo delicioso.</p><button id="explore-menu">Explorar el menú</button></div>'; action.innerHTML = ''; return; }
     const issues = cartAvailabilityIssues();
-    root.innerHTML = `<div class="cart-items">${state.cart.map(item => { const product = productById(item.productId) || item.productSnapshot; const issue = issues.find(entry => entry.item.key === item.key); return `<article class="cart-item ${issue ? 'is-unavailable' : ''}"><div class="cart-thumb"><img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}">${issue ? '<span>Agotado</span>' : ''}</div><div class="cart-info"><div class="cart-name"><strong>${escapeHtml(product.name)}</strong><button class="delete" data-delete="${escapeHtml(item.key)}" aria-label="Eliminar ${escapeHtml(product.name)}">×</button></div>${issue ? `<div class="cart-availability">${issue.reasons.map(reason => escapeHtml(reason)).join(' ')}</div>` : `<p>${escapeHtml(optionLabel(item))}</p>`}<button class="edit" data-edit="${escapeHtml(item.key)}">✎ Editar</button><div class="cart-line">${quantityMarkup(item.quantity,item.key)}<strong>${money(item.unitPrice * item.quantity)}</strong></div></div></article>`; }).join('')}</div><button class="continue" id="continue-shopping">＋ Seguir agregando</button><div class="summary"><div><span>Subtotal</span><span>${money(subtotal())}</span></div><div class="total"><strong>Total</strong><strong>${money(subtotal())}</strong></div></div>`;
+    root.innerHTML = `<div class="cart-items">${state.cart.map(item => { const product = productById(item.productId) || item.productSnapshot; const issue = issues.find(entry => entry.item.key === item.key); return `<article class="cart-item ${issue ? 'is-unavailable' : ''}"><div class="cart-thumb"><img src="${escapeHtml(fast.imageUrl(product.image))}" alt="${escapeHtml(product.name)}">${issue ? '<span>Agotado</span>' : ''}</div><div class="cart-info"><div class="cart-name"><strong>${escapeHtml(product.name)}</strong><button class="delete" data-delete="${escapeHtml(item.key)}" aria-label="Eliminar ${escapeHtml(product.name)}">×</button></div>${issue ? `<div class="cart-availability">${issue.reasons.map(reason => escapeHtml(reason)).join(' ')}</div>` : `<p>${escapeHtml(optionLabel(item))}</p>`}<button class="edit" data-edit="${escapeHtml(item.key)}">✎ Editar</button><div class="cart-line">${quantityMarkup(item.quantity,item.key)}<strong>${money(item.unitPrice * item.quantity)}</strong></div></div></article>`; }).join('')}</div><button class="continue" id="continue-shopping">＋ Seguir agregando</button><div class="summary"><div><span>Subtotal</span><span>${money(subtotal())}</span></div><div class="total"><strong>Total</strong><strong>${money(subtotal())}</strong></div></div>`;
     action.innerHTML = `<button id="go-checkout" ${issues.length ? 'disabled' : ''}>${issues.length ? 'Revisa lo agotado' : `Continuar · ${money(subtotal())}`}</button>`;
   }
 
@@ -411,6 +416,7 @@ window.JUANELOS_CONFIG = Object.freeze({
   function guideCheckoutField(selector,title,copy) { const field = $(selector,$('#checkout-form')); if (!field) return; const target = field.type === 'radio' ? field.closest('.checkout-choice') : field.closest('label'); target.classList.add('checkout-attention'); target.scrollIntoView({behavior:'smooth',block:'center'}); field.focus({preventScroll:true}); toast(title,copy); }
   async function confirmOrder() {
     if (state.cartStep === 'sending' || state.receiptBusy) return;
+    if (!state.catalogReady) { void loadStoreData(true); return toast('Actualizando la carta','Estamos verificando los precios y la disponibilidad antes de confirmar.'); }
     if (delivery.preparing) return toast('Un momento', 'Espera a que termine la solicitud de ubicación o continúa sin compartirla.');
     const digits = state.customer.phone.replace(/\D/g,'');
     if (cartAvailabilityIssues().length) {
@@ -496,9 +502,11 @@ window.JUANELOS_CONFIG = Object.freeze({
   $('#availability-dismiss').addEventListener('click', () => hideOverlay('availability'));
   $('#availability-review').addEventListener('click', () => { hideOverlay('availability'); $('#welcome-overlay').hidden = true; openCart(); });
   $('#availability-overlay').addEventListener('click', event => { if (event.target.id === 'availability-overlay') hideOverlay('availability'); });
-  if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
-
-  renderCategories(); renderProducts(true); updateCounts();
-  window.setTimeout(() => loadStoreData(true), 220);
+  localProducts.forEach(product => { product.image = fast.imageUrl(product.image); });
+  const cachedCatalog = fast.read('catalog',3 * 60000,localStorage);
+  if (Array.isArray(cachedCatalog) && cachedCatalog.length === 4 && cachedCatalog.every(result => Array.isArray(result.data))) applyStoreData(cachedCatalog);
+  else { renderCategories(); renderProducts(); }
+  updateCounts();
+  void loadStoreData(true);
   connectRealtime();
 })();

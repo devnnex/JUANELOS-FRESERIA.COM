@@ -7,18 +7,20 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="robots" content="noindex,nofollow" />
+  <link rel="preconnect" href="https://bxyvxbutjlvoconfsjub.supabase.co" crossorigin>
+  <link rel="preconnect" href="https://script.google.com">
   <title>Administración · Juanelos</title>
   <link rel="icon" type="image/png" href="./images/juanelos-app-icon-192.png" />
   <link rel="apple-touch-icon" href="./images/juanelos-app-icon-192.png" />
   <link rel="manifest" href="./admin.webmanifest" />
-  <link rel="stylesheet" href="./admin.css" />
-  <link rel="stylesheet" href="./order-extras.css?v=20261010-1" />
-  <link rel="stylesheet" href="./admin-extras.css?v=20261010-1" />
+  <link rel="stylesheet" href="./admin.css?v=20261010-2" />
+  <link rel="stylesheet" href="./order-extras.css?v=20261010-2" />
+  <link rel="stylesheet" href="./admin-extras.css?v=20261010-2" />
 </head>
 <body class="admin-page">
   <main class="auth-shell" id="auth-shell">
     <section class="auth-card">
-      <div class="auth-brand"><img src="./images/juanelos-logo.png" alt="Juanelos" /><span>ADMINISTRACIÓN</span></div>
+      <div class="auth-brand"><img src="./images/optimized/juanelos-logo.webp" decoding="async" alt="Juanelos" /><span>ADMINISTRACIÓN</span></div>
       <div class="auth-copy"><small id="auth-kicker">ACCESO DEL EQUIPO</small><h1 id="auth-title">Bienvenido</h1><p id="auth-description">Ingresa para gestionar Juanelos.</p></div>
       <form id="auth-form" class="auth-form">
         <label id="display-name-field" hidden>Nombre completo<input name="displayName" autocomplete="name" maxlength="70" placeholder="Tu nombre" /></label>
@@ -32,7 +34,7 @@
 
   <div class="admin-app" id="admin-app" hidden>
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-brand"><img src="./images/juanelos-logo.png" alt="Juanelos" /><span>ADMIN</span></div>
+      <div class="sidebar-brand"><img src="./images/optimized/juanelos-logo.webp" decoding="async" alt="Juanelos" /><span>ADMIN</span></div>
       <nav aria-label="Secciones de administración">
         <button class="active" data-section="orders"><span>◫</span>Órdenes<b id="new-orders-badge" hidden>0</b></button>
         <button data-section="products" data-permission="products"><span>◈</span>Productos</button>
@@ -80,7 +82,7 @@
 
       <section class="panel" data-panel="links">
         <div class="panel-heading"><div><h2>Enlaces de Juanelos</h2><p>Tu página de marca, siempre actualizada desde aquí.</p></div><div class="panel-actions"><a class="secondary-button brand-links-page" href="./enlaces.html" target="_blank" rel="noopener noreferrer">Ver página ↗</a><button type="button" class="primary-button compact" id="new-brand-link" disabled>+ Agregar enlace</button></div></div>
-        <div class="brand-links-intro"><img src="./images/juanelos-logo.png" alt="Juanelos"><div><strong>Un espacio propio para tu marca</strong><p>Agrega tus redes y destinos oficiales. El título, la descripción y el icono se adaptan a cada tarjeta. Los enlaces con menor orden aparecen primero.</p></div></div>
+        <div class="brand-links-intro"><img src="./images/optimized/juanelos-logo.webp" decoding="async" alt="Juanelos"><div><strong>Un espacio propio para tu marca</strong><p>Agrega tus redes y destinos oficiales. El título, la descripción y el icono se adaptan a cada tarjeta. Los enlaces con menor orden aparecen primero.</p></div></div>
         <div class="brand-links-toolbar"><p id="brand-links-status" role="status"></p><button type="button" class="secondary-button" id="refresh-brand-links">Actualizar</button></div>
         <div class="admin-grid" id="brand-links-admin"></div>
       </section>
@@ -109,10 +111,11 @@
 
   <div class="platform-notifications" id="platform-notifications" aria-live="assertive"></div>
   <div class="toast" id="admin-toast" hidden role="status" aria-live="polite"><strong></strong><span></span></div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./app.js?v=20261010-1"></script>
-  <script src="./order-services.js?v=20261010-1"></script>
-  <script src="./admin-extras.js?v=20261010-1"></script>
-  <script src="./admin.js?v=20261010-1"></script>
+  <script src="./config.js?v=20261010-2" defer></script>
+  <script src="./performance.js?v=20261010-2" defer></script>
+  <script src="./vendor/supabase/supabase.js?v=2.117.3" defer></script>
+  <script src="./order-services.js?v=20261010-2" defer></script>
+  <script src="./admin-extras.js?v=20261010-2" defer></script>
+  <script src="./admin.js?v=20261010-2" defer></script>
 </body>
 </html>

@@ -271,6 +271,10 @@ function createOrder_(rawOrder, backend) {
 function getOrders_(sinceRevision) {
   const revision = Number(readConfig_('revision') || 0);
   if (Number(sinceRevision) === revision) return { ok: true, changed: false, revision: revision };
+  const responseCache = CacheService.getScriptCache();
+  const responseKey = 'orders-v2-' + SPREADSHEET_ID + '-' + revision;
+  const cachedResponse = responseCache.get(responseKey);
+  if (cachedResponse) { try { return JSON.parse(cachedResponse); } catch (error) { /* reconstruir */ } }
 
   const database = ensureDatabase_();
   const sheet = database.getSheetByName(SHEETS.orders.name);
@@ -281,7 +285,10 @@ function getOrders_(sinceRevision) {
   }).sort(function (a, b) { return Number(a.sequence) - Number(b.sequence); });
   const auditSheet = database.getSheetByName(SHEETS.audit.name);
   const histories = {};
-  readObjects_(auditSheet, SHEETS.audit.headers).slice(-1200).forEach(function (entry) {
+  const auditCount = Math.min(1200, Math.max(0, auditSheet.getLastRow() - 1));
+  const auditRows = auditCount ? auditSheet.getRange(auditSheet.getLastRow() - auditCount + 1, 1, auditCount, SHEETS.audit.headers.length).getValues() : [];
+  auditRows.forEach(function (values) {
+    const entry = SHEETS.audit.headers.reduce(function (entry, header, index) { entry[header] = values[index]; return entry; }, {});
     if (!entry.orderId) return;
     let details = {};
     try { details = JSON.parse(entry.details || '{}'); } catch (error) { details = {}; }
@@ -297,7 +304,10 @@ function getOrders_(sinceRevision) {
   orders.forEach(function (order) {
     order.history = (histories[order.id] || []).slice().reverse();
   });
-  return { ok: true, changed: true, revision: revision, orders: orders };
+  const result = { ok: true, changed: true, revision: revision, orders: orders };
+  const serialized = JSON.stringify(result);
+  if (serialized.length < 30000) { try { responseCache.put(responseKey, serialized, 60); } catch (error) { /* la caché es opcional */ } }
+  return result;
 }
 
 function updateOrder_(payload, user, backend) {

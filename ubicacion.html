@@ -3,13 +3,17 @@
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4fafe"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="strict-origin-when-cross-origin">
+  <link rel="preconnect" href="https://bxyvxbutjlvoconfsjub.supabase.co" crossorigin>
+  <link rel="preconnect" href="https://script.google.com">
   <title>Juanelos · Ubicación de entrega</title><link rel="icon" href="./images/juanelos-app-icon-192.png">
-  <link rel="stylesheet" href="./vendor/leaflet/leaflet.css"><link rel="stylesheet" href="./ubicacion.css?v=20261010-1">
-  <script src="./vendor/leaflet/leaflet.js" defer></script><script src="./app.js?v=20261010-1" defer></script><script src="./order-services.js?v=20261010-1" defer></script><script src="./ubicacion.js?v=20261010-1" defer></script>
+  <link rel="stylesheet" href="./vendor/leaflet/leaflet.css"><link rel="stylesheet" href="./ubicacion.css?v=20261010-2">
+  <script src="./config.js?v=20261010-2" defer></script>
+  <script src="./performance.js?v=20261010-2" defer></script>
+  <script src="./vendor/leaflet/leaflet.js" defer></script><script src="./order-services.js?v=20261010-2" defer></script><script src="./ubicacion.js?v=20261010-2" defer></script>
 </head>
 <body>
   <main class="delivery-map-shell">
-    <header class="delivery-map-header"><a href="./index.html" aria-label="Ir a Juanelos"><img src="./images/juanelos-logo.png" alt="Juanelos"></a><span>ENTREGAS JUANELOS</span></header>
+    <header class="delivery-map-header"><a href="./index.html" aria-label="Ir a Juanelos"><img src="./images/optimized/juanelos-logo.webp" decoding="async" alt="Juanelos"></a><span>ENTREGAS JUANELOS</span></header>
     <section class="delivery-map-heading"><div><small>UN POCO MÁS CERCA DE TI</small><h1>Nos vemos aquí.</h1><p>Ubicación compartida para facilitar la entrega.</p></div><span class="delivery-map-state" id="map-state">Conectando</span></section>
     <section class="delivery-map-card"><div class="delivery-map" id="delivery-map" role="region" aria-label="Mapa de la ubicación del cliente"></div><div class="delivery-map-empty" id="map-empty"><span aria-hidden="true">⌖</span><strong id="map-empty-title">Buscando la ubicación</strong><p id="map-empty-copy">Estamos conectando con el pedido.</p></div><button type="button" class="delivery-map-center" id="map-center" disabled aria-label="Centrar el mapa en el cliente">⌖</button></section>
     <section class="delivery-map-info"><div><small>PEDIDO</small><strong id="map-order">—</strong></div><div><small>ÚLTIMA POSICIÓN</small><strong id="map-time">—</strong></div><div><small>PRECISIÓN APROXIMADA</small><strong id="map-accuracy">—</strong></div></section>

@@ -14,6 +14,19 @@ test('legacy orders and appended headers preserve existing fields and revisions'
   assert.equal(api.post('updateOrder', { token: 'orders-token', orderId: result.orderId, changes: { status: 'despachada' } }).ok, true);
 });
 
+test('orders cache reuses a revision, invalidates after changes, and still requires authorization', () => {
+  const api = createBackend();
+  const created = api.post('createOrder', {order:orderFixture(api,{receipt:null,liveLocation:null})});
+  const first = api.post('getOrders',{token:'orders-token',sinceRevision:-1});
+  const orderReads = api.reads.Ordenes, auditReads = api.reads.Auditoria;
+  assert.deepEqual(api.post('getOrders',{token:'orders-token',sinceRevision:-1}),first);
+  assert.equal(api.reads.Ordenes,orderReads);assert.equal(api.reads.Auditoria,auditReads);
+  assert.equal(api.post('getOrders',{sinceRevision:-1}).ok,false);
+  api.post('updateOrder',{token:'orders-token',orderId:created.orderId,changes:{status:'atendiendo'}});
+  const changed = api.post('getOrders',{token:'orders-token',sinceRevision:first.revision});
+  assert.equal(changed.orders[0].status,'atendiendo');assert.ok(changed.revision>first.revision);
+});
+
 test('receipts stay private and only staff with orders permission can retrieve them', () => {
   const api = createBackend(), order = orderFixture(api);
   const result = api.post('createOrder', { order }); assert.equal(result.ok, true); assert.equal(result.receiptAttached, true);

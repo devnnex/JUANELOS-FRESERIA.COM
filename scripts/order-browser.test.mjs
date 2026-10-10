@@ -13,7 +13,7 @@ const data = { products:[product], toppings:[], payment_methods:[{id:'pay1',name
 const user = { id:'boss',displayName:'Administrador',role:'jefe',permissions:{} };
 const shim = `window.supabase={createClient(){const channel={on(){return channel},subscribe(){return channel},send:async()=>{},unsubscribe:async()=>{}};return {channel:()=>channel,removeChannel:()=>{},from(table){const query={select(){return query},order(){return query},eq(){return query},then(resolve){return fetch('/__fixtures/'+table).then(r=>r.json()).then(data=>({data,error:null})).then(resolve)}};return query},rpc:async(name,parameters)=>{const response=await fetch('/__fixtures/rpc/'+name,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(parameters)});return {data:await response.json(),error:null}}}}};`;
 async function setup(context) {
-  await context.route('https://cdn.jsdelivr.net/**', route=>route.fulfill({contentType:'application/javascript',body:shim}));
+  await context.route('**/vendor/supabase/supabase.js*', route=>route.fulfill({contentType:'application/javascript',body:shim}));
   await context.route('**/__fixtures/**', route=>{
     const name=route.request().url().split('/__fixtures/')[1];
     let result=data[name] || {};
@@ -95,6 +95,12 @@ try {
   await ap.locator(`[data-brand-delete="${id}"]`).click();await ap.locator('#confirm-delete').click();await ap.waitForFunction(()=>document.querySelectorAll('[data-brand-edit]').length===0);
   await ap.locator('[data-section=products]').click();await ap.locator('[data-edit=product]').first().click();await ap.locator('.product-image-field').waitFor();
   await ap.locator('[name=imageFile]').setInputFiles('images/juanelos-logo.png');assert.equal(await ap.locator('.product-image-preview').evaluate(img=>img.src.startsWith('blob:')),true);await screenshot(ap,'selector-imagen-admin');
+  const prepared=await ap.locator('[name=imageFile]').evaluate(async input=>{
+    const result=await window.JuanelosServices.prepareProductImage(input.files[0]);
+    const image=new Image();image.src=`data:${result.mimeType};base64,${result.base64}`;await image.decode();
+    const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;const context=canvas.getContext('2d');context.drawImage(image,0,0);
+    return {mime:result.mimeType,bytes:atob(result.base64).length,original:input.files[0].size,alpha:context.getImageData(0,0,1,1).data[3]};
+  });assert.equal(prepared.mime,'image/webp');assert.ok(prepared.bytes<prepared.original);assert.equal(prepared.alpha,0);
   for(const width of [320,375,768]){await ap.setViewportSize({width,height:812});await ap.waitForTimeout(350);const picker=await ap.locator('.product-image-field').boundingBox();assert.ok(picker.x>=0&&picker.x+picker.width<=width);if(width>=375)await fits(ap)}
   await page.locator('#location-sharing-stop').click();await page.locator('#location-sharing-bar').waitFor({state:'hidden'});await viewer.locator('#map-refresh').click();await viewer.waitForFunction(()=>document.querySelector('#map-state').textContent==='Finalizada');
   await page.setViewportSize({width:1440,height:900});const bar=await page.locator('.bottom-nav').boundingBox();assert.ok(Math.abs(bar.x+bar.width/2-720)<1);

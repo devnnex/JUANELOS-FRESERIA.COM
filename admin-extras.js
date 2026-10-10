@@ -21,7 +21,7 @@
     label.classList.add('product-image-field'); label.replaceChildren();
     const title = document.createElement('strong'); title.textContent = 'Imagen del producto'; label.append(title);
     const preview = document.createElement('img'); preview.className = 'product-image-preview'; preview.alt = 'Vista previa de la imagen del producto';
-    if (currentUrl) preview.src = currentUrl; else preview.hidden = true; label.append(preview);
+    if (currentUrl) preview.src = window.JuanelosPerformance.imageUrl(currentUrl); else preview.hidden = true; label.append(preview);
     const picker = document.createElement('span'); picker.className = 'premium-upload';
     picker.innerHTML = '<input name="imageFile" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Seleccionar imagen del producto"><span class="upload-symbol" aria-hidden="true">↑</span><span><strong>Elegir imagen</strong><small>JPG, PNG o WebP · hasta 2.5 MB</small></span><b aria-hidden="true">+</b>'; label.append(picker);
     const input = picker.querySelector('input');

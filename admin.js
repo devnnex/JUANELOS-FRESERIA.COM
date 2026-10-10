@@ -2,6 +2,7 @@
   'use strict';
 
   const CONFIG = window.JUANELOS_CONFIG || {};
+  const fast = window.JuanelosPerformance;
   const configured = /^https:\/\/.+\.supabase\.co$/i.test(CONFIG.supabaseUrl || '')
     && CONFIG.supabaseAnonKey && !String(CONFIG.supabaseAnonKey).includes('PEGA_')
     && /^https:\/\/script\.google\.com\//i.test(CONFIG.appsScriptUrl || '');
@@ -29,6 +30,7 @@
     orderTimer: null,
     ordersLoading: false,
     ordersReloadQueued: false,
+    ordersReloadForce: false,
     ordersInitialized: false,
     knownOrderIds: new Set(),
     alertsArmed: false,
@@ -41,8 +43,10 @@
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-  const money = value => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value) || 0);
-  const dateTime = value => value ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '—';
+  const moneyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+  const dateFormatter = new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+  const money = value => moneyFormatter.format(Number(value) || 0);
+  const dateTime = value => value ? dateFormatter.format(new Date(value)) : '—';
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[character]));
   const slug = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 70);
   const can = permission => state.user?.role === 'jefe' || Boolean(state.user?.permissions?.[permission]);
@@ -181,20 +185,10 @@
   }
 
   async function rpc(name, parameters = {}) {
-    if (!client) throw new Error('Configura Supabase y Apps Script en las primeras líneas de app.js.');
+    if (!client) throw new Error('Configura Supabase y Apps Script en las primeras líneas de config.js.');
     const { data, error } = await client.rpc(name, parameters);
     if (error) throw new Error(error.message);
     return data;
-  }
-
-  function initializeOrdersBackend() {
-    if (!configured || sessionStorage.getItem('juanelos-sheets-initialized') === '1') return;
-    sessionStorage.setItem('juanelos-sheets-initialized', '1');
-    fetch(`${CONFIG.appsScriptUrl}?initialize=1&t=${Date.now()}`, {
-      method: 'GET',
-      mode: 'no-cors',
-      cache: 'no-store'
-    }).catch(() => { sessionStorage.removeItem('juanelos-sheets-initialized'); });
   }
 
   async function orderApi(action, data = {}) {
@@ -233,7 +227,7 @@
   async function initializeAuth() {
     if (!configured) {
       $('#auth-title').textContent = 'Falta la configuración';
-      $('#auth-description').textContent = 'Pega la URL, anon key y URL de Apps Script al inicio de app.js.';
+      $('#auth-description').textContent = 'Pega la URL, anon key y URL de Apps Script al inicio de config.js.';
       $('#auth-form').hidden = true;
       return;
     }
@@ -247,6 +241,7 @@
           return;
         }
         localStorage.removeItem('juanelos-admin-token');
+        fast.remove('private-admin');
         state.token = '';
       }
       const status = await rpc('bootstrap_status');
@@ -293,18 +288,30 @@
     $('#user-role').textContent = state.user.role === 'jefe' ? 'Jefe · control total' : 'Usuario del equipo';
     $('#user-avatar').textContent = state.user.displayName.charAt(0).toUpperCase();
     $$('[data-permission]').forEach(button => { button.hidden = !can(button.dataset.permission); });
+    const cached = fast.read('private-admin',60000);
+    if (cached?.token === state.token && cached.scope === adminScope()) {
+      if (cached.snapshot) { state.snapshot = cached.snapshot; renderAll(); }
+      if (can('orders') && Array.isArray(cached.orders)) {
+        state.orders = cached.orders; state.orderRevision = cached.revision; state.ordersInitialized = true;
+        state.knownOrderIds = new Set(cached.orders.map(order => order.id)); renderOrders();
+      }
+    }
     if (!can('orders')) switchSection(firstAllowedSection());
-    await Promise.all([loadSnapshot(), can('orders') ? loadOrders(true) : Promise.resolve()]);
     connectRealtime();
     if (sessionStorage.getItem('juanelos-alerts-armed') === '1') armAlerts({ type: 'restore' });
     if (can('orders')) scheduleOrderPolling();
+    await Promise.all([loadSnapshot(), can('orders') ? loadOrders(false) : Promise.resolve()]);
   }
+
+  function adminScope() { return JSON.stringify({id:state.user.id,role:state.user.role,permissions:state.user.permissions}); }
+  function cacheAdmin() { fast.write('private-admin',{token:state.token,scope:adminScope(),snapshot:state.snapshot,orders:can('orders')&&state.ordersInitialized?state.orders:null,revision:state.orderRevision}); }
 
   function firstAllowedSection() {
     return ['orders','products','toppings','payments','neighborhoods','links','users'].find(section => section === 'orders' ? can('orders') : can(section)) || 'products';
   }
 
   async function logout() {
+    fast.remove('private-admin');
     clearTimeout(state.orderTimer);
     state.alertsArmed = false;
     state.notificationAudio?.pause();
@@ -315,22 +322,31 @@
     location.reload();
   }
 
-  async function loadSnapshot() {
+  let snapshotLoading = null, snapshotQueued = false;
+  function loadSnapshot() {
+    if (snapshotLoading) { snapshotQueued = true; return snapshotLoading; }
+    snapshotLoading = refreshSnapshot().finally(() => { snapshotLoading = null; if (snapshotQueued) { snapshotQueued = false; void loadSnapshot(); } });
+    return snapshotLoading;
+  }
+  async function refreshSnapshot() {
     try {
       state.snapshot = await rpc('admin_snapshot', { p_token: state.token });
+      fast.write('catalog',[state.snapshot.products,state.snapshot.toppings,state.snapshot.payments,state.snapshot.neighborhoods].map(data => ({data})),localStorage);
       renderAll();
+      cacheAdmin();
     } catch (error) {
       if (/sesión/i.test(errorMessage(error))) return logout();
       toast('No pudimos actualizar', errorMessage(error));
     }
   }
 
-  async function loadOrders(force = false) {
+  async function loadOrders(force = false, queue = false) {
     if (state.ordersLoading) {
-      if (force) state.ordersReloadQueued = true;
+      if (force || queue) { state.ordersReloadQueued = true; state.ordersReloadForce ||= force; }
       return;
     }
     state.ordersLoading = true;
+    $('#order-list').setAttribute('aria-busy','true');
     try {
       const result = await orderApi('getOrders', { sinceRevision: force ? -1 : state.orderRevision });
       if (result.changed) {
@@ -342,6 +358,7 @@
         state.knownOrderIds = new Set(incoming.map(order => order.id));
         state.orderRevision = Number(result.revision);
         state.ordersInitialized = true;
+        cacheAdmin();
         if (newOrders.length) state.orderPage = 1;
         renderOrders();
         announceNewOrders(newOrders);
@@ -355,34 +372,39 @@
     } catch (error) {
       if (force) toast('Órdenes no disponibles', errorMessage(error));
     } finally {
+      $('#order-list').setAttribute('aria-busy','false');
       state.ordersLoading = false;
       if (state.ordersReloadQueued) {
+        const forceReload = state.ordersReloadForce;
         state.ordersReloadQueued = false;
-        queueMicrotask(() => { void loadOrders(true); });
+        state.ordersReloadForce = false;
+        queueMicrotask(() => { void loadOrders(forceReload); });
       }
     }
   }
 
   function connectRealtime() {
     if (!client) return;
+    let refreshTimer;
+    const refreshCatalog = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(() => { void loadSnapshot(); },80); };
     state.realtime = client.channel('juanelos-admin-catalog')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => { void loadSnapshot(); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'toppings' }, () => { void loadSnapshot(); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_methods' }, () => { void loadSnapshot(); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'neighborhoods' }, () => { void loadSnapshot(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, refreshCatalog)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'toppings' }, refreshCatalog)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_methods' }, refreshCatalog)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'neighborhoods' }, refreshCatalog)
       .subscribe();
     state.orderRealtime = client.channel('juanelos-orders-live')
-      .on('broadcast', { event: 'order-created' }, () => { void loadOrders(true); })
+      .on('broadcast', { event: 'order-created' }, () => { if(can('orders'))void loadOrders(false,true); })
       .subscribe(status => {
         const indicator = $('#realtime-status');
         if (!indicator) return;
         const connected = status === 'SUBSCRIBED';
         indicator.classList.toggle('is-offline', !connected);
         indicator.innerHTML = connected ? '<i></i> Tiempo real' : '<i></i> Reconectando';
-        if (connected) void loadOrders(true);
+        if (connected && can('orders')) void loadOrders(false);
       });
     state.orderEventsRealtime = client.channel('juanelos-order-events-durable')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_events' }, () => { void loadOrders(true); })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_events' }, () => { if(can('orders'))void loadOrders(false,true); })
       .subscribe();
   }
 
@@ -394,15 +416,16 @@
     $('#section-title').textContent = titles[section];
     $('#section-kicker').textContent = section === 'orders' ? 'OPERACIÓN EN VIVO' : 'CONFIGURACIÓN';
     $('#sidebar').classList.remove('open');
-    if (section === 'links' && can('links')) void loadBrandLinks();
+    renderCatalogSection(section);
+    if (section === 'links' && can('links') && (!state.brandLinksReady || Date.now()-state.brandLinksUpdated > 30000)) void loadBrandLinks();
   }
 
-  function renderAll() {
-    renderProducts();
-    renderToppings();
-    renderPayments();
-    renderNeighborhoods();
-    renderUsers();
+  let dirtySections = new Set();
+  function renderAll() { dirtySections = new Set(['products','toppings','payments','neighborhoods','users']); renderCatalogSection(state.activeSection); }
+  function renderCatalogSection(section) {
+    if (!dirtySections.has(section)) return;
+    const render = {products:renderProducts,toppings:renderToppings,payments:renderPayments,neighborhoods:renderNeighborhoods,users:renderUsers}[section];
+    if (render) { render(); dirtySections.delete(section); }
   }
 
   function emptyMarkup(copy) { return `<div class="empty-admin">${escapeHtml(copy)}</div>`; }
@@ -413,7 +436,7 @@
     const root = $('#products-admin');
     const list = state.snapshot.products || [];
     $('[data-delete-all="product"]').disabled = !list.length;
-    root.innerHTML = list.length ? list.map(item => `<article class="admin-card"><div class="admin-card-image"><img src="${escapeHtml(item.image_url || './images/juanelos-original.png')}" alt=""></div><div class="admin-card-body"><div class="admin-card-head"><div><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(item.category)}</p></div>${switchMarkup('product', item)}</div><p>${escapeHtml(item.description)}</p><div class="admin-card-foot"><strong>${money(item.price)}</strong>${actionsMarkup('product', item.id)}</div></div></article>`).join('') : emptyMarkup('Aún no hay productos.');
+    root.innerHTML = list.length ? list.map(item => `<article class="admin-card"><div class="admin-card-image"><img src="${escapeHtml(fast.imageUrl(item.image_url || './images/juanelos-original.png'))}" alt="" decoding="async" loading="lazy"></div><div class="admin-card-body"><div class="admin-card-head"><div><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(item.category)}</p></div>${switchMarkup('product', item)}</div><p>${escapeHtml(item.description)}</p><div class="admin-card-foot"><strong>${money(item.price)}</strong>${actionsMarkup('product', item.id)}</div></div></article>`).join('') : emptyMarkup('Aún no hay productos.');
   }
 
   function renderToppings() {
@@ -506,7 +529,7 @@
     try {
       const result = await orderApi('getBrandLinks');
       if (!Array.isArray(result.links)) throw new Error('La lista de enlaces no está disponible.');
-      state.brandLinks = result.links; state.brandLinksReady = true; renderBrandLinks();
+      state.brandLinks = result.links; state.brandLinksReady = true; state.brandLinksUpdated = Date.now(); renderBrandLinks();
       $('#brand-links-status').textContent = 'Los enlaces activos se muestran en enlaces.html.';
     } catch (error) {
       state.brandLinksReady = false;
@@ -514,6 +537,8 @@
     } finally { state.brandLinksLoading = false; $('#refresh-brand-links').disabled = false; $('#new-brand-link').disabled = !state.brandLinksReady; }
   }
   function renderBrandLinks() {
+    state.brandLinksUpdated = Date.now();
+    fast.write('brand-links',state.brandLinks.filter(link => link.active === true),localStorage);
     $('#brand-links-admin').innerHTML = state.brandLinks.map(link => `<article class="admin-card brand-link-card"><div class="brand-link-card-heading"><span>${escapeHtml(link.kind)}</span><b>${link.active ? 'Activo' : 'Oculto'}</b></div><h3>${escapeHtml(link.title)}</h3><p>${escapeHtml(link.subtitle)}</p><a href="${escapeHtml(window.JuanelosServices.safeLink(link.url))}" target="_blank" rel="noopener noreferrer">${escapeHtml(link.url)}</a><div class="brand-link-card-actions"><small>Orden ${Number(link.sortOrder) || 0}</small><button type="button" class="secondary-button" data-brand-edit="${escapeHtml(link.id)}">Editar</button><button type="button" class="danger-button" data-brand-delete="${escapeHtml(link.id)}">Eliminar</button></div></article>`).join('') || emptyMarkup('Agrega tus redes y enlaces. La página ya incluye el menú, WhatsApp y cómo llegar a Juanelos.');
   }
   function openBrandLinkEditor(id = '') {
@@ -607,20 +632,10 @@
     finally { button.disabled = false; }
   }
 
-  function uploadImage(file) {
-    if (file.size > 2.5 * 1024 * 1024) throw new Error('La imagen debe pesar menos de 2.5 MB.');
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
-      reader.onload = async () => {
-        try {
-          const dataUrl = typeof reader.result === 'string' ? reader.result : '';
-          const result = await orderApi('uploadImage', { mimeType: file.type, base64: dataUrl.split(',')[1] });
-          resolve(result.url);
-        } catch (error) { reject(error); }
-      };
-      reader.readAsDataURL(file);
-    });
+  async function uploadImage(file) {
+    const image = await window.JuanelosServices.prepareProductImage(file);
+    const result = await orderApi('uploadImage',image);
+    return result.url;
   }
 
   async function deleteEntity(entity, id) {
@@ -752,11 +767,11 @@
   function openOrder(orderId) {
     const order = state.orders.find(entry => entry.id === orderId);
     if (!order) return;
-    const productImage = item => state.snapshot.products?.find(product => product.id === item.productId)?.image_url || './images/juanelos-original.png';
+    const productImage = item => fast.imageUrl(state.snapshot.products?.find(product => product.id === item.productId)?.image_url || './images/juanelos-original.png');
     const history = order.history || [];
     $('#order-modal-title').textContent = order.id;
     $('#order-modal-subtitle').textContent = `${dateTime(order.createdAt)} · ${order.customerName}`;
-    $('#order-detail').innerHTML = `<div class="order-hero"><div><span class="status-orb status-${escapeHtml(order.status)}"></span><small>ESTADO ACTUAL</small><strong>${escapeHtml(order.status)}</strong></div><div><small>TOTAL</small><strong>${money(order.total)}</strong></div><div><small>RESPONSABLE ACTUAL</small><strong>${escapeHtml(order.handledByName || 'Sin asignar')}</strong></div></div><div class="order-premium-grid"><div class="order-primary-column"><section class="command-card"><div class="command-heading"><div><small>COMANDA</small><h3>Productos</h3></div><span>${(order.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0)} unidades</span></div><div class="order-items premium-items">${(order.items || []).map(item => `<article class="order-item premium-item"><img src="${escapeHtml(productImage(item))}" alt=""><div><strong>${item.quantity} × ${escapeHtml(item.name)}</strong>${item.selections?.length ? `<small>${item.selections.map(escapeHtml).join(' · ')}</small>` : '<small>Preparación original</small>'}</div><span>${money(Number(item.unitPrice) * Number(item.quantity))}</span></article>`).join('')}</div><div class="order-totals"><div><span>Subtotal</span><strong>${money(order.subtotal)}</strong></div><div><span>Domicilio</span><strong>${money(order.deliveryFee)}</strong></div><div class="grand-total"><span>Total</span><strong>${money(order.total)}</strong></div></div></section><section class="command-card trace-card"><div class="command-heading"><div><small>TRAZABILIDAD</small><h3>Historia de la orden</h3></div></div><div class="order-timeline">${history.length ? history.map((entry, index) => `<article><i class="${index === 0 ? 'current' : ''}"></i><div><strong>${escapeHtml(historyLabel(entry))}</strong><span>${escapeHtml(entry.userName || 'Sistema')} · ${dateTime(entry.createdAt)}</span></div></article>`).join('') : '<p class="empty-trace">La historia aparecerá a medida que el equipo atienda la orden.</p>'}</div></section></div><aside class="order-side-column"><section class="command-card customer-card"><div class="command-heading"><div><small>CLIENTE</small><h3>Entrega y pago</h3></div></div><div class="detail-line"><span>Nombre</span><strong>${escapeHtml(order.customerName)}</strong></div><div class="detail-line"><span>Teléfono</span><strong>${escapeHtml(order.phone)}</strong></div><div class="detail-line"><span>Entrega</span><strong>${order.fulfillment === 'delivery' ? 'Domicilio' : 'Recoger'}</strong></div>${order.fulfillment === 'delivery' ? `<div class="detail-line"><span>Barrio</span><strong>${escapeHtml(order.neighborhood)}</strong></div><div class="detail-line"><span>Dirección</span><strong>${escapeHtml(order.address)}</strong></div>` : ''}<div class="detail-line"><span>Pago</span><strong>${escapeHtml(order.paymentMethod)}</strong></div>${order.notes ? `<div class="order-notes"><small>NOTAS</small><p>${escapeHtml(order.notes)}</p></div>` : ''}</section><section class="command-card order-controls"><label class="select-shell"><span>Estado de la orden</span><select class="juanelos-select" id="order-status"><option value="nueva">Nueva</option><option value="atendiendo">Atendiendo</option><option value="despachada">Despachada</option><option value="borrador">Borrador</option></select></label><label class="select-shell"><span>Mensaje al cliente</span><select class="juanelos-select" id="message-type"><option value="">Elegir mensaje…</option><option value="esperando_pago">Esperando tu pago</option><option value="en_preparacion">Pedido en preparación</option><option value="despachada">Pedido despachado</option></select></label><button class="whatsapp-button" id="send-whatsapp">Enviar por WhatsApp</button><button class="danger-button delete-order" id="delete-order">Eliminar orden</button></section></aside></div>`;
+    $('#order-detail').innerHTML = `<div class="order-hero"><div><span class="status-orb status-${escapeHtml(order.status)}"></span><small>ESTADO ACTUAL</small><strong>${escapeHtml(order.status)}</strong></div><div><small>TOTAL</small><strong>${money(order.total)}</strong></div><div><small>RESPONSABLE ACTUAL</small><strong>${escapeHtml(order.handledByName || 'Sin asignar')}</strong></div></div><div class="order-premium-grid"><div class="order-primary-column"><section class="command-card"><div class="command-heading"><div><small>COMANDA</small><h3>Productos</h3></div><span>${(order.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0)} unidades</span></div><div class="order-items premium-items">${(order.items || []).map(item => `<article class="order-item premium-item"><img src="${escapeHtml(productImage(item))}" alt="" decoding="async" loading="lazy"><div><strong>${item.quantity} × ${escapeHtml(item.name)}</strong>${item.selections?.length ? `<small>${item.selections.map(escapeHtml).join(' · ')}</small>` : '<small>Preparación original</small>'}</div><span>${money(Number(item.unitPrice) * Number(item.quantity))}</span></article>`).join('')}</div><div class="order-totals"><div><span>Subtotal</span><strong>${money(order.subtotal)}</strong></div><div><span>Domicilio</span><strong>${money(order.deliveryFee)}</strong></div><div class="grand-total"><span>Total</span><strong>${money(order.total)}</strong></div></div></section><section class="command-card trace-card"><div class="command-heading"><div><small>TRAZABILIDAD</small><h3>Historia de la orden</h3></div></div><div class="order-timeline">${history.length ? history.map((entry, index) => `<article><i class="${index === 0 ? 'current' : ''}"></i><div><strong>${escapeHtml(historyLabel(entry))}</strong><span>${escapeHtml(entry.userName || 'Sistema')} · ${dateTime(entry.createdAt)}</span></div></article>`).join('') : '<p class="empty-trace">La historia aparecerá a medida que el equipo atienda la orden.</p>'}</div></section></div><aside class="order-side-column"><section class="command-card customer-card"><div class="command-heading"><div><small>CLIENTE</small><h3>Entrega y pago</h3></div></div><div class="detail-line"><span>Nombre</span><strong>${escapeHtml(order.customerName)}</strong></div><div class="detail-line"><span>Teléfono</span><strong>${escapeHtml(order.phone)}</strong></div><div class="detail-line"><span>Entrega</span><strong>${order.fulfillment === 'delivery' ? 'Domicilio' : 'Recoger'}</strong></div>${order.fulfillment === 'delivery' ? `<div class="detail-line"><span>Barrio</span><strong>${escapeHtml(order.neighborhood)}</strong></div><div class="detail-line"><span>Dirección</span><strong>${escapeHtml(order.address)}</strong></div>` : ''}<div class="detail-line"><span>Pago</span><strong>${escapeHtml(order.paymentMethod)}</strong></div>${order.notes ? `<div class="order-notes"><small>NOTAS</small><p>${escapeHtml(order.notes)}</p></div>` : ''}</section><section class="command-card order-controls"><label class="select-shell"><span>Estado de la orden</span><select class="juanelos-select" id="order-status"><option value="nueva">Nueva</option><option value="atendiendo">Atendiendo</option><option value="despachada">Despachada</option><option value="borrador">Borrador</option></select></label><label class="select-shell"><span>Mensaje al cliente</span><select class="juanelos-select" id="message-type"><option value="">Elegir mensaje…</option><option value="esperando_pago">Esperando tu pago</option><option value="en_preparacion">Pedido en preparación</option><option value="despachada">Pedido despachado</option></select></label><button class="whatsapp-button" id="send-whatsapp">Enviar por WhatsApp</button><button class="danger-button delete-order" id="delete-order">Eliminar orden</button></section></aside></div>`;
     $('#order-status').value = order.status;
     $('#message-type').value = order.messageStatus || '';
     $('#order-status').addEventListener('change', event => { void updateOrder(order.id, { status: event.target.value }); });
@@ -899,7 +914,6 @@
   window.addEventListener('focus', () => { void loadOrders(false); scheduleOrderPolling(250); });
   window.addEventListener('online', () => { void loadOrders(true); scheduleOrderPolling(250); });
   window.addEventListener('beforeunload', () => { clearTimeout(state.orderTimer); state.nativeNotifications.forEach(notification => notification.close()); if (state.realtime) client.removeChannel(state.realtime); if (state.orderRealtime) client.removeChannel(state.orderRealtime); if (state.orderEventsRealtime) client.removeChannel(state.orderEventsRealtime); });
-  if ('serviceWorker' in navigator) window.addEventListener('load', () => { navigator.serviceWorker.register('./service-worker.js').catch(() => {}); });
   if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', event => {
     if (event.data?.type !== 'OPEN_ORDER') return;
     state.pendingOrderId = event.data.orderId || '';
@@ -907,6 +921,5 @@
     if (state.pendingOrderId) void loadOrders(true);
   });
 
-  initializeOrdersBackend();
   void initializeAuth();
 })();

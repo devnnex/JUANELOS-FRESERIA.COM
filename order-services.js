@@ -61,5 +61,19 @@
     } catch (error) { if (error.name === 'EncodingError') throw new Error('No pudimos abrir esa imagen. Elige otra captura.'); throw error; }
     finally { URL.revokeObjectURL(objectUrl); }
   }
-  window.JuanelosServices = Object.freeze({ api, escapeHtml, locationUrl, requireCapability, prepareReceipt, fileData, safeLink });
+  async function prepareProductImage(file) {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 2.5 * 1024 * 1024) throw new Error('Elige JPG, PNG o WebP de hasta 2.5 MB.');
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const image = new Image(); image.src = objectUrl; await image.decode();
+      const ratio = Math.min(1,1600/Math.max(image.width,image.height));
+      const canvas = document.createElement('canvas'); canvas.width = Math.max(1,Math.round(image.width*ratio)); canvas.height = Math.max(1,Math.round(image.height*ratio));
+      canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+      const blob = await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',.92));
+      // Keep small originals when converting does not save transfer bytes.
+      const selected = blob && blob.size < file.size ? blob : file;
+      return {mimeType:selected.type,base64:(await fileData(selected)).split(',')[1]};
+    } finally { URL.revokeObjectURL(objectUrl); }
+  }
+  window.JuanelosServices = Object.freeze({ api, escapeHtml, locationUrl, requireCapability, prepareReceipt, prepareProductImage, fileData, safeLink });
 })();
